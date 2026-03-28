@@ -1,0 +1,1889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SERHOUDJI — Mud Logging Unit Simulation</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0a; overflow: hidden; font-family: 'Courier New', monospace; }
+  canvas { display: block; }
+
+  /* HUD overlay */
+  #hud {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 10;
+  }
+
+  /* Top-left: title + depth */
+  #info-panel {
+    position: fixed; top: 20px; left: 20px;
+    background: rgba(0,0,0,0.65);
+    border: 1px solid rgba(255,180,50,0.4);
+    border-radius: 6px;
+    padding: 12px 18px;
+    color: #ffb432;
+    font-size: 13px;
+    line-height: 1.8;
+    pointer-events: none;
+  }
+  #info-panel .title {
+    font-size: 15px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #ffd080;
+    margin-bottom: 6px;
+  }
+  #info-panel .step {
+    font-size: 10px;
+    color: rgba(255,180,50,0.55);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  /* Bottom-left: controls help */
+  #controls-help {
+    position: fixed; bottom: 20px; left: 20px;
+    background: rgba(0,0,0,0.55);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    padding: 10px 16px;
+    color: rgba(255,255,255,0.45);
+    font-size: 11px;
+    line-height: 1.9;
+    pointer-events: none;
+  }
+  #controls-help span { color: rgba(255,200,80,0.7); }
+
+  /* Crosshair */
+  #crosshair {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 18px; height: 18px;
+    pointer-events: none;
+  }
+  #crosshair::before, #crosshair::after {
+    content: '';
+    position: absolute;
+    background: rgba(255,255,255,0.7);
+  }
+  #crosshair::before { width: 2px; height: 100%; left: 50%; transform: translateX(-50%); }
+  #crosshair::after  { height: 2px; width: 100%; top: 50%; transform: translateY(-50%); }
+
+  /* Click-to-start overlay */
+  #start-screen {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.88);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 100;
+    cursor: pointer;
+    transition: opacity 0.4s;
+  }
+  #start-screen h1 {
+    color: #ffd080;
+    font-size: 28px;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    font-family: 'Courier New', monospace;
+  }
+  #start-screen p {
+    color: rgba(255,255,255,0.45);
+    font-size: 13px;
+    letter-spacing: 2px;
+    margin-bottom: 30px;
+  }
+  #start-screen .click-btn {
+    border: 1px solid rgba(255,180,50,0.5);
+    color: #ffb432;
+    padding: 10px 32px;
+    font-size: 13px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    font-family: 'Courier New', monospace;
+    background: rgba(255,180,50,0.08);
+    border-radius: 4px;
+  }
+  #start-screen .subtitle {
+    color: rgba(255,255,255,0.2);
+    font-size: 10px;
+    letter-spacing: 2px;
+    margin-top: 16px;
+  }
+
+  /* Locked indicator */
+  #locked-indicator {
+    position: fixed; top: 20px; right: 20px;
+    color: rgba(100,255,140,0.7);
+    font-size: 10px;
+    letter-spacing: 2px;
+    display: none;
+  }
+  #locked-indicator.active { display: block; }
+
+  /* ── Inspect prompt ── */
+  #inspect-prompt {
+    position: fixed;
+    bottom: 90px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(5,8,14,0.82);
+    border: 1px solid rgba(200,150,10,0.55);
+    border-radius: 8px;
+    padding: 10px 22px;
+    color: #e8d080;
+    font-size: 13px;
+    text-align: center;
+    line-height: 1.7;
+    letter-spacing: 1px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s;
+    white-space: nowrap;
+  }
+  #inspect-prompt.visible { opacity: 1; }
+  #inspect-icon { font-size: 18px; margin-right: 6px; color: #ffcc44; }
+  #inspect-name { font-weight: bold; color: #ffd860; }
+  .inspect-key {
+    display: inline-block;
+    background: rgba(200,150,10,0.18);
+    border: 1px solid rgba(200,150,10,0.5);
+    border-radius: 4px;
+    padding: 1px 7px;
+    font-size: 11px;
+    color: #ffcc44;
+    letter-spacing: 1px;
+  }
+
+  /* ── Info overlay panel ── */
+  #info-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.72);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 200;
+    backdrop-filter: blur(4px);
+    transition: opacity 0.3s;
+  }
+  #info-overlay.hidden { display: none; }
+
+  #info-card {
+    width: min(720px, 92vw);
+    background: #080c12;
+    border: 1px solid rgba(200,150,10,0.4);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 0 60px rgba(200,150,10,0.12), 0 24px 80px rgba(0,0,0,0.7);
+    font-family: 'Courier New', monospace;
+  }
+
+  #info-header {
+    background: linear-gradient(135deg, #0e1420 0%, #060a10 100%);
+    border-bottom: 1px solid rgba(200,150,10,0.3);
+    padding: 20px 28px 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  #info-header::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: linear-gradient(180deg, #ffcc44, #c8960a);
+  }
+  #info-category {
+    font-size: 10px; letter-spacing: 3px;
+    color: rgba(200,150,10,0.65); margin-bottom: 6px;
+  }
+  #info-title {
+    font-size: 22px; font-weight: bold; color: #ffd860;
+    letter-spacing: 2px; margin-bottom: 4px;
+  }
+  #info-subtitle {
+    font-size: 12px; color: rgba(220,200,140,0.55); letter-spacing: 1px;
+  }
+
+  #info-body {
+    padding: 20px 28px;
+    max-height: 55vh;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(200,150,10,0.3) transparent;
+  }
+  .info-section { margin-bottom: 18px; }
+  .info-section-label {
+    font-size: 10px; letter-spacing: 2px; color: rgba(200,150,10,0.7);
+    text-transform: uppercase; margin-bottom: 6px;
+  }
+  .info-section-text {
+    font-size: 13px; color: rgba(220,210,180,0.85);
+    line-height: 1.75; font-family: Arial, sans-serif;
+  }
+
+  /* Readings grid */
+  #info-readings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px; margin-top: 6px;
+  }
+  .reading-card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(200,150,10,0.2);
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .reading-label { font-size: 10px; color: rgba(200,170,80,0.6); letter-spacing: 1px; margin-bottom: 4px; }
+  .reading-value { font-size: 18px; font-weight: bold; color: #ffe060; }
+  .reading-unit  { font-size: 10px; color: rgba(220,200,140,0.5); margin-left: 3px; }
+
+  #info-footer {
+    border-top: 1px solid rgba(200,150,10,0.2);
+    padding: 12px 28px;
+    font-size: 10px; color: rgba(200,170,80,0.4);
+    letter-spacing: 1px; text-align: right;
+  }
+</style>
+</head>
+<body>
+
+<!-- Start screen -->
+<div id="start-screen" onclick="startExploration()">
+  <h1>SERHOUDJI</h1>
+  <p>Next-Generation Oil Field Solutions</p>
+  <div style="width:60px;height:1px;background:rgba(255,180,50,0.4);margin:0 auto 24px;"></div>
+  <div style="color:rgba(255,255,255,0.3);font-size:11px;letter-spacing:3px;text-transform:uppercase;margin-bottom:28px;font-family:'Courier New',monospace;">Mud Logging Unit · Interactive Simulation</div>
+  <div class="click-btn">Enter Unit</div>
+  <div class="subtitle">WASD · ARROW KEYS · MOUSE LOOK</div>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="info-panel">
+    <div class="step">SERHOUDJI · Mud Logging Simulation</div>
+    <div class="title">Field Unit Alpha</div>
+    <div id="pos-display">Position: X 0.0  Z 0.0</div>
+    <div id="depth-display">Simulated depth: <span id="depth-val">2 847</span> m</div>
+  </div>
+
+  <div id="controls-help">
+    <span>W A S D</span> or <span>↑ ↓ ← →</span> — Move<br>
+    <span>Mouse</span> — Look around<br>
+    <span>ESC</span> — Release cursor
+  </div>
+
+  <div id="crosshair"></div>
+  <div id="locked-indicator">● EXPLORING</div>
+
+  <!-- Inspect prompt (appears when near a hotspot) -->
+  <div id="inspect-prompt">
+    <span id="inspect-icon">◈</span>
+    <span id="inspect-name">Gas Chromatograph</span><br>
+    <span class="inspect-key">[E]</span> Inspect
+  </div>
+</div>
+
+<!-- Instrument info panel -->
+<div id="info-overlay" class="hidden">
+  <div id="info-card">
+    <div id="info-header">
+      <div id="info-category">INSTRUMENT</div>
+      <div id="info-title">Gas Chromatograph</div>
+      <div id="info-subtitle">Real-time gas analysis</div>
+    </div>
+    <div id="info-body">
+      <div class="info-section">
+        <div class="info-section-label">▸ What it does</div>
+        <div class="info-section-text" id="info-what"></div>
+      </div>
+      <div class="info-section">
+        <div class="info-section-label">▸ How it works</div>
+        <div class="info-section-text" id="info-how"></div>
+      </div>
+      <div class="info-section">
+        <div class="info-section-label">▸ Geological significance</div>
+        <div class="info-section-text" id="info-geo"></div>
+      </div>
+      <div class="info-section">
+        <div class="info-section-label">▸ Live readings</div>
+        <div id="info-readings-grid"></div>
+      </div>
+    </div>
+    <div id="info-footer">
+      <span class="inspect-key">[E]</span> or <span class="inspect-key">[ESC]</span> to close
+      &nbsp;·&nbsp; SERHOUDJI Field Simulation
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ─── SCENE SETUP ────────────────────────────────────────────────────────────
+const scene    = new THREE.Scene();
+const camera   = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.05, 200);
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+renderer.physicallyCorrectLights = true;
+document.body.appendChild(renderer.domElement);
+
+scene.fog = new THREE.FogExp2(0x0d0b08, 0.045);
+scene.background = new THREE.Color(0x0d0b08);
+
+camera.position.set(0, 1.65, 3.5);
+
+// ─── PROCEDURAL TEXTURE HELPERS ─────────────────────────────────────────────
+function makeCanvas(w, h, fn) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  fn(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+
+// Scratched brushed-metal texture
+const brushedMetalTex = makeCanvas(512, 512, (ctx, w, h) => {
+  ctx.fillStyle = '#6a6a60';
+  ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < 900; i++) {
+    const y = Math.random() * h;
+    ctx.strokeStyle = `rgba(${180+Math.random()*60},${180+Math.random()*60},${160+Math.random()*60},${0.06+Math.random()*0.12})`;
+    ctx.lineWidth = 0.4 + Math.random() * 0.6;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y + (Math.random()-0.5)*4);
+    ctx.stroke();
+  }
+  // Scratches
+  for (let i = 0; i < 40; i++) {
+    const x = Math.random()*w, y = Math.random()*h;
+    ctx.strokeStyle = `rgba(255,255,255,${0.03+Math.random()*0.07})`;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+Math.random()*80-40, y+Math.random()*20-10);
+    ctx.stroke();
+  }
+});
+brushedMetalTex.wrapS = brushedMetalTex.wrapT = THREE.RepeatWrapping;
+brushedMetalTex.repeat.set(4, 4);
+
+// Concrete / painted-wall texture
+const wallTex = makeCanvas(512, 512, (ctx, w, h) => {
+  ctx.fillStyle = '#3a3528';
+  ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < 6000; i++) {
+    const x = Math.random()*w, y = Math.random()*h;
+    const v = Math.random()*18 - 9;
+    ctx.fillStyle = `rgba(${v>0?255:0},${v>0?255:0},${v>0?255:0},${Math.abs(v)*0.005})`;
+    ctx.fillRect(x, y, 1.5, 1.5);
+  }
+  // Horizontal panel seams
+  [128, 256, 384].forEach(py => {
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(w, py); ctx.stroke();
+  });
+});
+wallTex.wrapS = wallTex.wrapT = THREE.RepeatWrapping;
+wallTex.repeat.set(6, 3);
+
+// Floor vinyl / anti-slip texture
+const floorTex = makeCanvas(512, 512, (ctx, w, h) => {
+  ctx.fillStyle = '#252015';
+  ctx.fillRect(0, 0, w, h);
+  // Grid lines
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < w; x += 32) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+  for (let y = 0; y < h; y += 32) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+  // Grit dots
+  for (let i = 0; i < 4000; i++) {
+    ctx.fillStyle = `rgba(0,0,0,${0.1+Math.random()*0.2})`;
+    ctx.beginPath();
+    ctx.arc(Math.random()*w, Math.random()*h, 0.6, 0, Math.PI*2);
+    ctx.fill();
+  }
+});
+floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
+floorTex.repeat.set(10, 40);
+
+// Dark panel / equipment texture
+const panelTex = makeCanvas(256, 256, (ctx, w, h) => {
+  ctx.fillStyle = '#141412';
+  ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < 1200; i++) {
+    const x = Math.random()*w, y = Math.random()*h;
+    ctx.fillStyle = `rgba(255,255,255,${Math.random()*0.02})`;
+    ctx.fillRect(x, y, 1, 1);
+  }
+  // Subtle vents / lines
+  for (let y2 = 20; y2 < h; y2 += 18) {
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(12, y2, w-24, 2);
+  }
+});
+panelTex.wrapS = panelTex.wrapT = THREE.RepeatWrapping;
+panelTex.repeat.set(2, 2);
+
+// Desk surface texture (dark laminate)
+const deskTex = makeCanvas(256, 256, (ctx, w, h) => {
+  ctx.fillStyle = '#1e1c14';
+  ctx.fillRect(0, 0, w, h);
+  // Wood grain suggestion
+  for (let i = 0; i < 60; i++) {
+    const y = Math.random()*h;
+    ctx.strokeStyle = `rgba(${60+Math.random()*20},${50+Math.random()*15},${20+Math.random()*10},${0.08+Math.random()*0.1})`;
+    ctx.lineWidth = 0.5 + Math.random();
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w, y+(Math.random()-0.5)*8); ctx.stroke();
+  }
+});
+deskTex.wrapS = deskTex.wrapT = THREE.RepeatWrapping;
+deskTex.repeat.set(3, 1);
+
+// ─── UPGRADED MATERIALS ──────────────────────────────────────────────────────
+const floorMat = new THREE.MeshStandardMaterial({
+  map: floorTex, color: 0x2a2318, roughness: 0.94, metalness: 0.04,
+});
+const wallMat = new THREE.MeshStandardMaterial({
+  map: wallTex, color: 0x3a3528, roughness: 0.90, metalness: 0.02,
+});
+const ceilMat = new THREE.MeshStandardMaterial({
+  color: 0x28241a, roughness: 0.96, metalness: 0.0,
+});
+const metalMat = new THREE.MeshStandardMaterial({
+  map: brushedMetalTex, color: 0x909088, roughness: 0.28, metalness: 0.88,
+  envMapIntensity: 1.2,
+});
+const darkMetalMat = new THREE.MeshStandardMaterial({
+  color: 0x1e1e18, roughness: 0.55, metalness: 0.85,
+});
+const rubberMat = new THREE.MeshStandardMaterial({
+  color: 0x141410, roughness: 0.99, metalness: 0.0,
+});
+
+// ─── TRAILER DIMENSIONS ─────────────────────────────────────────────────────
+// A real mud logging unit trailer: ~12m long, 2.4m wide, 2.2m tall (interior)
+const W = 2.3;   // half-width
+const H = 2.2;   // full height
+const L = 12;    // full length
+const hw = W;    // half width
+const hl = L/2;  // half length
+
+// ─── FLOOR ──────────────────────────────────────────────────────────────────
+function addFloor() {
+  // Main floor
+  const geo = new THREE.PlaneGeometry(W*2, L);
+  const mesh = new THREE.Mesh(geo, floorMat);
+  mesh.rotation.x = -Math.PI/2;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+
+  // Floor edge trim strips (metal baseboards)
+  const trimGeo = new THREE.BoxGeometry(0.04, 0.08, L);
+  const trimL = new THREE.Mesh(trimGeo, metalMat);
+  trimL.position.set(-hw + 0.02, 0.04, 0);
+  scene.add(trimL);
+  const trimR = new THREE.Mesh(trimGeo, metalMat);
+  trimR.position.set( hw - 0.02, 0.04, 0);
+  scene.add(trimR);
+
+  // Anti-slip rubber mat strips across floor
+  for (let z = -hl + 1; z < hl; z += 1.5) {
+    const matGeo = new THREE.BoxGeometry(W*2 - 0.05, 0.015, 0.3);
+    const matMesh = new THREE.Mesh(matGeo, rubberMat);
+    matMesh.position.set(0, 0.008, z);
+    scene.add(matMesh);
+  }
+}
+addFloor();
+
+// ─── CEILING ────────────────────────────────────────────────────────────────
+function addCeiling() {
+  const geo = new THREE.PlaneGeometry(W*2, L);
+  const mesh = new THREE.Mesh(geo, ceilMat);
+  mesh.rotation.x = Math.PI/2;
+  mesh.position.y = H;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+
+  // Ceiling ribs (structural beams running across)
+  for (let z = -hl + 1.2; z < hl; z += 1.5) {
+    const ribGeo = new THREE.BoxGeometry(W*2 + 0.05, 0.06, 0.08);
+    const rib = new THREE.Mesh(ribGeo, darkMetalMat);
+    rib.position.set(0, H - 0.04, z);
+    scene.add(rib);
+  }
+
+  // Central cable conduit running full length
+  const conduitGeo = new THREE.BoxGeometry(0.12, 0.09, L);
+  const conduit = new THREE.Mesh(conduitGeo, darkMetalMat);
+  conduit.position.set(0, H - 0.055, 0);
+  scene.add(conduit);
+}
+addCeiling();
+
+// ─── WALLS ──────────────────────────────────────────────────────────────────
+function addWalls() {
+  // Left wall
+  const lGeo = new THREE.PlaneGeometry(L, H);
+  const lWall = new THREE.Mesh(lGeo, wallMat);
+  lWall.rotation.y = Math.PI/2;
+  lWall.position.set(-hw, H/2, 0);
+  lWall.receiveShadow = true;
+  scene.add(lWall);
+
+  // Right wall
+  const rWall = new THREE.Mesh(lGeo.clone(), wallMat);
+  rWall.rotation.y = -Math.PI/2;
+  rWall.position.set(hw, H/2, 0);
+  rWall.receiveShadow = true;
+  scene.add(rWall);
+
+  // Back wall (far end)
+  const bGeo = new THREE.PlaneGeometry(W*2, H);
+  const bWall = new THREE.Mesh(bGeo, wallMat);
+  bWall.position.set(0, H/2, -hl);
+  bWall.receiveShadow = true;
+  scene.add(bWall);
+
+  // Front wall with door cutout (two panels + header)
+  // Left panel
+  const fGeo1 = new THREE.BoxGeometry(W - 0.45, H, 0.08);
+  const fWall1 = new THREE.Mesh(fGeo1, new THREE.MeshStandardMaterial({color:0x353020, roughness:0.9}));
+  fWall1.position.set(-(0.45 + (W-0.45)/2) + hw, H/2, hl);
+  scene.add(fWall1);
+  // Right panel
+  const fWall2 = fWall1.clone();
+  fWall2.position.set((0.45 + (W-0.45)/2) - hw, H/2, hl);
+  scene.add(fWall2);
+  // Header above door
+  const headerGeo = new THREE.BoxGeometry(0.9, H - 2.0, 0.08);
+  const header = new THREE.Mesh(headerGeo, new THREE.MeshStandardMaterial({color:0x353020, roughness:0.9}));
+  header.position.set(0, H - (H-2.0)/2, hl);
+  scene.add(header);
+
+  // Wall paneling horizontal lines (right wall detail)
+  for (let y = 0.5; y < H - 0.1; y += 0.55) {
+    const panelGeo = new THREE.BoxGeometry(0.01, 0.03, L - 0.4);
+    const panel = new THREE.Mesh(panelGeo, darkMetalMat);
+    panel.position.set(hw - 0.001, y, 0);
+    scene.add(panel);
+    const panelL = panel.clone();
+    panelL.position.set(-hw + 0.001, y, 0);
+    scene.add(panelL);
+  }
+}
+addWalls();
+
+// ─── DOOR ───────────────────────────────────────────────────────────────────
+function addDoor() {
+  // Door frame
+  const frameMatl = new THREE.MeshStandardMaterial({ color: 0x4a4030, roughness: 0.6, metalness: 0.3 });
+  // Left jamb
+  const jGeo = new THREE.BoxGeometry(0.06, 2.05, 0.12);
+  const jL = new THREE.Mesh(jGeo, frameMatl);
+  jL.position.set(-0.45, 1.025, hl - 0.01);
+  scene.add(jL);
+  const jR = jL.clone();
+  jR.position.set( 0.45, 1.025, hl - 0.01);
+  scene.add(jR);
+  // Top jamb
+  const jtGeo = new THREE.BoxGeometry(0.9 + 0.12, 0.06, 0.12);
+  const jTop = new THREE.Mesh(jtGeo, frameMatl);
+  jTop.position.set(0, 2.05, hl - 0.01);
+  scene.add(jTop);
+
+  // Door panel (slightly open — ajar)
+  const doorGeo = new THREE.BoxGeometry(0.86, 1.98, 0.04);
+  const doorMesh = new THREE.Mesh(doorGeo, new THREE.MeshStandardMaterial({
+    color: 0x3a3022, roughness: 0.7, metalness: 0.2
+  }));
+  doorMesh.position.set(0.01, 1.01, hl - 0.3);
+  doorMesh.rotation.y = Math.PI * 0.08; // slightly ajar
+  scene.add(doorMesh);
+
+  // Door handle
+  const handleGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.12, 8);
+  const handle = new THREE.Mesh(handleGeo, metalMat);
+  handle.rotation.z = Math.PI/2;
+  handle.position.set(-0.32, 1.05, hl - 0.34);
+  scene.add(handle);
+}
+addDoor();
+
+// ─── CEILING LIGHTS ─────────────────────────────────────────────────────────
+const lightPositions = [-4.5, -1.8, 0.8, 3.5];
+
+function addLights() {
+  // Very dim ambient — forces lights to do real work
+  const ambient = new THREE.AmbientLight(0x181208, 0.6);
+  scene.add(ambient);
+
+  // Hemisphere sky/ground for subtle bounced fill
+  const hemi = new THREE.HemisphereLight(0x302818, 0x0a0805, 0.35);
+  scene.add(hemi);
+
+  lightPositions.forEach((z, i) => {
+    // Fixture housing (brushed aluminium)
+    const fixtureGeo = new THREE.BoxGeometry(0.55, 0.07, 0.22);
+    const fixtureMat = new THREE.MeshStandardMaterial({ map: brushedMetalTex, color: 0x888878, roughness: 0.3, metalness: 0.85 });
+    const fixture = new THREE.Mesh(fixtureGeo, fixtureMat);
+    fixture.position.set(0, H - 0.04, z);
+    fixture.receiveShadow = true;
+    scene.add(fixture);
+
+    // Diffuser (glowing panel)
+    const diffGeo = new THREE.BoxGeometry(0.48, 0.01, 0.14);
+    const diffMat = new THREE.MeshStandardMaterial({
+      color: 0xfff8e8, emissive: 0xfff8e8, emissiveIntensity: 2.4, roughness: 1,
+      transparent: true, opacity: 0.95,
+    });
+    const diffuser = new THREE.Mesh(diffGeo, diffMat);
+    diffuser.position.set(0, H - 0.076, z);
+    scene.add(diffuser);
+
+    // Main SpotLight (casts real shadows + cone)
+    const spot = new THREE.SpotLight(0xfff4d6, 28, 7.5, Math.PI * 0.38, 0.45, 1.8);
+    spot.position.set(0, H - 0.09, z);
+    spot.target.position.set(0, 0, z);
+    spot.castShadow = true;
+    spot.shadow.mapSize.set(1024, 1024);
+    spot.shadow.camera.near = 0.2;
+    spot.shadow.camera.far = 9;
+    spot.shadow.bias = -0.0005;
+    scene.add(spot);
+    scene.add(spot.target);
+
+    // Fill PointLight (soft bounce under fixture)
+    const fill = new THREE.PointLight(0xffe8b0, 3.5, 5.5, 2);
+    fill.position.set(0, H - 0.25, z);
+    scene.add(fill);
+
+    if (i === 2) {
+      spot.userData.flicker = true;
+      spot.userData.baseIntensity = 28;
+      fill.userData.flicker = true;
+      fill.userData.baseIntensity = 3.5;
+    }
+  });
+
+  // Red emergency light near door
+  const emergency = new THREE.PointLight(0xff2200, 2.5, 2.8, 2);
+  emergency.position.set(hw - 0.15, 2.08, hl - 0.25);
+  scene.add(emergency);
+  const redGeo = new THREE.SphereGeometry(0.055, 10, 10);
+  const redMat = new THREE.MeshStandardMaterial({ color: 0xff1100, emissive: 0xff1100, emissiveIntensity: 3.0, roughness: 0.3 });
+  const redLamp = new THREE.Mesh(redGeo, redMat);
+  redLamp.position.copy(emergency.position);
+  scene.add(redLamp);
+  // Housing ring
+  const ringGeo = new THREE.TorusGeometry(0.065, 0.012, 8, 16);
+  const ring = new THREE.Mesh(ringGeo, metalMat);
+  ring.position.copy(emergency.position);
+  ring.rotation.x = Math.PI/2;
+  scene.add(ring);
+
+  // Accent light behind workstation (blue-tinted computer glow)
+  const compGlow = new THREE.PointLight(0x2244aa, 2.0, 2.5, 2);
+  compGlow.position.set(0, 1.1, -hl + 0.1);
+  scene.add(compGlow);
+
+  // Warm accent behind equipment rack
+  const rackGlow = new THREE.PointLight(0xaa6600, 1.2, 2.0, 2);
+  rackGlow.position.set(hw - 0.1, 0.8, -2.2);
+  scene.add(rackGlow);
+}
+addLights();
+
+// ─── SHARED FURNITURE MATERIALS ─────────────────────────────────────────────
+const deskMat   = new THREE.MeshStandardMaterial({ map: deskTex, color: 0x1e1c14, roughness: 0.72, metalness: 0.15 });
+const deskTopMat= new THREE.MeshStandardMaterial({ color: 0x2a2820, roughness: 0.40, metalness: 0.30 });
+const screenMat = new THREE.MeshStandardMaterial({ color: 0x040810, roughness: 0.05, metalness: 0.8  });
+const screenGlowMat = new THREE.MeshStandardMaterial({ color: 0x0a2a4a, emissive: 0x0a2a4a, emissiveIntensity: 1.6, roughness: 0.05 });
+const keyboardMat   = new THREE.MeshStandardMaterial({ color: 0x0e0e0c, roughness: 0.80, metalness: 0.15 });
+const panelMat      = new THREE.MeshStandardMaterial({ map: panelTex, color: 0x141412, roughness: 0.55, metalness: 0.65 });
+const creamMat      = new THREE.MeshStandardMaterial({ color: 0xc8c0a0, roughness: 0.75, metalness: 0.06 });
+const benchTopMat   = new THREE.MeshStandardMaterial({ color: 0x282820, roughness: 0.50, metalness: 0.25 });
+const chairMat      = new THREE.MeshStandardMaterial({ color: 0x100e0c, roughness: 0.96, metalness: 0.04 });
+
+// ─── HELPER: box mesh ───────────────────────────────────────────────────────
+function box(w, h, d, mat, x, y, z, rxyz) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z);
+  if (rxyz) { m.rotation.x = rxyz[0]; m.rotation.y = rxyz[1]; m.rotation.z = rxyz[2]; }
+  m.castShadow = true; m.receiveShadow = true;
+  scene.add(m); return m;
+}
+
+// ─── 1. MAIN WORKSTATION DESK (back wall) ───────────────────────────────────
+function addWorkstation() {
+  const dz = -hl + 0.38; // desk Z (against back wall)
+
+  // Desk surface — full width, L-shaped feel: main + left return
+  box(W*2 - 0.08, 0.04, 0.72, deskTopMat,  0,    0.84, dz);        // main top
+  box(W*2 - 0.08, 0.82, 0.05, deskMat,     0,    0.42, dz + 0.35); // front panel
+  box(0.04,        0.82, 0.72, deskMat,   -hw+0.06, 0.42, dz);     // left side panel
+  box(0.04,        0.82, 0.72, deskMat,    hw-0.06, 0.42, dz);     // right side panel
+
+  // Desk legs (4 corners)
+  [[- hw+0.1, dz-0.28],[hw-0.1, dz-0.28],[-hw+0.1, dz+0.28],[hw-0.1, dz+0.28]].forEach(([x,z2])=>{
+    box(0.06, 0.82, 0.06, metalMat, x, 0.41, z2);
+  });
+
+  // Under-desk cable tray
+  box(W*2 - 0.3, 0.05, 0.1, darkMetalMat, 0, 0.55, dz + 0.25);
+
+  // ── MONITOR LEFT (gas chromatograph log display) ──
+  const mz = dz - 0.06;
+  // Build canvas screen with a scrolling GC trace
+  function makeLogScreen(w,h,fn){ const c=document.createElement('canvas'); c.width=w; c.height=h; fn(c.getContext('2d'),w,h); const t=new THREE.CanvasTexture(c); t.anisotropy=renderer.capabilities.getMaxAnisotropy(); return t; }
+
+  const gcTex = makeLogScreen(512,320,(ctx,w,h)=>{
+    ctx.fillStyle='#010d05'; ctx.fillRect(0,0,w,h);
+    // Grid
+    ctx.strokeStyle='rgba(0,180,60,0.15)'; ctx.lineWidth=1;
+    for(let x=0;x<w;x+=32){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
+    for(let y=0;y<h;y+=32){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
+    // Header
+    ctx.font='bold 13px Courier New'; ctx.fillStyle='#00ff88'; ctx.fillText('GAS CHROMATOGRAPH  //  REAL-TIME',8,18);
+    ctx.font='11px Courier New'; ctx.fillStyle='rgba(0,220,80,0.6)';
+    ctx.fillText('DEPTH: 2847m   LAG: 18min   RATE: 1.2m/hr',8,34);
+    // Draw gas curves C1-C5
+    const gases=[
+      {label:'C1',col:'#00ff88',base:0.82,amp:0.12},
+      {label:'C2',col:'#44ffcc',base:0.60,amp:0.06},
+      {label:'C3',col:'#88ffaa',base:0.45,amp:0.04},
+      {label:'iC4',col:'#ccff44',base:0.35,amp:0.025},
+      {label:'C5',col:'#ffff44',base:0.28,amp:0.015},
+    ];
+    gases.forEach((g,gi)=>{
+      ctx.beginPath(); ctx.strokeStyle=g.col; ctx.lineWidth=1.5;
+      for(let px=0;px<w;px+=2){
+        const nx=px/w*8;
+        const v=g.base+g.amp*(Math.sin(nx*3.1+gi)+Math.sin(nx*7.3+gi*2)*0.4+Math.sin(nx*1.7)*0.3);
+        const py=h-40-(v*(h-60));
+        if(px===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+      }
+      ctx.stroke();
+      // Legend
+      ctx.fillStyle=g.col; ctx.font='10px Courier New';
+      ctx.fillText(g.label,w-36,h-40-(g.base*(h-60)));
+    });
+    // Total gas filled area
+    ctx.beginPath(); ctx.fillStyle='rgba(0,255,100,0.06)';
+    for(let px=0;px<w;px+=2){
+      const nx=px/w*8;
+      const v=0.82+0.12*(Math.sin(nx*3.1)+Math.sin(nx*7.3)*0.4+Math.sin(nx*1.7)*0.3);
+      const py=h-40-(v*(h-60));
+      if(px===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.lineTo(w,h-40); ctx.lineTo(0,h-40); ctx.closePath(); ctx.fill();
+    // Bottom bar
+    ctx.fillStyle='rgba(0,100,40,0.5)'; ctx.fillRect(0,h-38,w,38);
+    ctx.font='10px Courier New'; ctx.fillStyle='#00ff88';
+    ctx.fillText('TOTAL GAS: 3241 ppm  C1: 2908  C2: 186  C3: 44',8,h-22);
+    ctx.fillText('SERHOUDJI · LOGGING SYS v4.2  ●  RECORDING',8,h-8);
+  });
+  const gcScreenMat=new THREE.MeshStandardMaterial({map:gcTex,emissive:0x002208,emissiveIntensity:0.4,roughness:0.05,metalness:0.2});
+  box(0.72,0.42,0.022,gcScreenMat, -0.8,1.22,mz);
+  // Monitor bezel
+  box(0.76,0.46,0.028,panelMat, -0.8,1.22,mz+0.025);
+  box(0.78,0.48,0.02, new THREE.MeshStandardMaterial({color:0x0a0a0a,roughness:0.5,metalness:0.5}), -0.8,1.22,mz+0.038);
+  // Stand neck + base
+  const monNeck1=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.025,0.14,10),metalMat);
+  monNeck1.position.set(-0.8,0.91,mz+0.06); scene.add(monNeck1);
+  box(0.24,0.022,0.20,metalMat, -0.8,0.852,mz+0.09);
+  // Screen glow light
+  const scrnL1=new THREE.PointLight(0x00ff88,0.8,0.8,2); scrnL1.position.set(-0.8,1.22,mz-0.08); scene.add(scrnL1);
+
+  // ── MONITOR RIGHT (drilling parameters) ──
+  const drillTex=makeLogScreen(512,320,(ctx,w,h)=>{
+    ctx.fillStyle='#080500'; ctx.fillRect(0,0,w,h);
+    ctx.strokeStyle='rgba(255,140,0,0.12)'; ctx.lineWidth=1;
+    for(let x=0;x<w;x+=32){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
+    for(let y=0;y<h;y+=32){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
+    ctx.font='bold 13px Courier New'; ctx.fillStyle='#ffaa00';
+    ctx.fillText('DRILLING PARAMETERS  //  LIVE',8,18);
+    // ROP curve (green)
+    ctx.beginPath(); ctx.strokeStyle='#44ff88'; ctx.lineWidth=2;
+    for(let px=0;px<w;px+=2){
+      const nx=px/w*6;
+      const v=0.55+0.3*(Math.sin(nx*2.1)+Math.sin(nx*5.7)*0.25+Math.abs(Math.sin(nx*0.8))*0.2);
+      if(px===0) ctx.moveTo(px,h-40-(v*(h-60))); else ctx.lineTo(px,h-40-(v*(h-60)));
+    }
+    ctx.stroke();
+    // WOB (amber)
+    ctx.beginPath(); ctx.strokeStyle='#ffaa00'; ctx.lineWidth=1.5;
+    for(let px=0;px<w;px+=2){
+      const nx=px/w*6;
+      const v=0.70+0.08*Math.sin(nx*4.2+1);
+      if(px===0) ctx.moveTo(px,h-40-(v*(h-60))); else ctx.lineTo(px,h-40-(v*(h-60)));
+    }
+    ctx.stroke();
+    // RPM (cyan)
+    ctx.beginPath(); ctx.strokeStyle='#00ccff'; ctx.lineWidth=1.5;
+    for(let px=0;px<w;px+=2){
+      const nx=px/w*6;
+      const v=0.62+0.04*Math.sin(nx*9.1+2);
+      if(px===0) ctx.moveTo(px,h-40-(v*(h-60))); else ctx.lineTo(px,h-40-(v*(h-60)));
+    }
+    ctx.stroke();
+    // Legend
+    ctx.font='10px Courier New';
+    [['ROP','#44ff88',0],['WOB','#ffaa00',1],['RPM','#00ccff',2]].forEach(([l,c,i])=>{
+      ctx.fillStyle=c; ctx.fillRect(8+i*70,h-60,14,6); ctx.fillText(l,26+i*70,h-55);
+    });
+    ctx.fillStyle='rgba(100,60,0,0.4)'; ctx.fillRect(0,h-38,w,38);
+    ctx.font='10px Courier New'; ctx.fillStyle='#ffaa00';
+    ctx.fillText('ROP: 9.4m/hr  WOB: 13.2klbs  RPM: 128  TQ: 8.6kNm',8,h-22);
+    ctx.fillText('SPM: 64  FLOW-IN: 38.8L/s  PRESS: 182bar',8,h-8);
+  });
+  const drillScreenMat=new THREE.MeshStandardMaterial({map:drillTex,emissive:0x100800,emissiveIntensity:0.35,roughness:0.05});
+  box(0.62,0.38,0.022,drillScreenMat, 0.75,1.20,mz);
+  box(0.66,0.42,0.028,panelMat, 0.75,1.20,mz+0.025);
+  box(0.68,0.44,0.02,new THREE.MeshStandardMaterial({color:0x0a0a0a,roughness:0.5,metalness:0.5}), 0.75,1.20,mz+0.038);
+  const monNeck2=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.022,0.12,10),metalMat);
+  monNeck2.position.set(0.75,0.905,mz+0.06); scene.add(monNeck2);
+  box(0.20,0.02,0.17,metalMat, 0.75,0.852,mz+0.08);
+  const scrnL2=new THREE.PointLight(0xff8800,0.6,0.7,2); scrnL2.position.set(0.75,1.20,mz-0.08); scene.add(scrnL2);
+
+  // ── CENTRE MONITOR (mud properties live readout) ──
+  const mudTex=makeLogScreen(320,200,(ctx,w,h)=>{
+    ctx.fillStyle='#050810'; ctx.fillRect(0,0,w,h);
+    ctx.font='bold 11px Courier New'; ctx.fillStyle='#4488ff';
+    ctx.fillText('MUD PROPERTIES',8,16);
+    const props=[
+      ['DENSITY','1.426 g/cm³'],['VISCOSITY','42 sec/qt'],
+      ['FLOW IN','38.8 L/s'],['FLOW OUT','38.4 L/s'],
+      ['PIT VOL','128.4 m³'],['TEMP','62.4°C'],
+    ];
+    props.forEach(([k,v],i)=>{
+      ctx.fillStyle='rgba(80,120,220,0.5)'; ctx.fillRect(6,24+i*26,w-12,22);
+      ctx.font='10px Courier New'; ctx.fillStyle='#88aaff';
+      ctx.fillText(k,12,39+i*26);
+      ctx.fillStyle='#ffffff'; ctx.textAlign='right';
+      ctx.fillText(v,w-10,39+i*26); ctx.textAlign='left';
+    });
+  });
+  const mudScreenMat=new THREE.MeshStandardMaterial({map:mudTex,emissive:0x040610,emissiveIntensity:0.3,roughness:0.05});
+  box(0.38,0.28,0.022,mudScreenMat, -0.05,1.16,mz);
+  box(0.42,0.32,0.028,panelMat, -0.05,1.16,mz+0.025);
+  box(0.44,0.34,0.018,new THREE.MeshStandardMaterial({color:0x080808,roughness:0.5,metalness:0.5}), -0.05,1.16,mz+0.037);
+  const monNeck3=new THREE.Mesh(new THREE.CylinderGeometry(0.013,0.018,0.10,10),metalMat);
+  monNeck3.position.set(-0.05,0.895,mz+0.05); scene.add(monNeck3);
+  box(0.15,0.018,0.13,metalMat, -0.05,0.852,mz+0.07);
+
+  // ── KEYBOARD ──
+  box(0.52, 0.018, 0.18, keyboardMat, -0.55, 0.86, dz + 0.16);
+  // Key rows (subtle grid lines)
+  for (let r = 0; r < 4; r++) {
+    box(0.50, 0.003, 0.002, new THREE.MeshStandardMaterial({color:0x333330}),
+        -0.55, 0.87, dz + 0.09 + r*0.03);
+  }
+
+  // ── MOUSE ──
+  box(0.065, 0.025, 0.11, new THREE.MeshStandardMaterial({color:0x222220, roughness:0.7}),
+      -0.22, 0.862, dz + 0.18);
+
+  // ── LOGGING COMPUTER TOWER (under desk, right side) ──
+  box(0.22, 0.38, 0.42, panelMat,    hw-0.18, 0.2, dz + 0.15);
+  // Drive bays
+  for (let i = 0; i < 3; i++) {
+    box(0.18, 0.04, 0.01, darkMetalMat, hw-0.18, 0.32 + i*0.07, dz - 0.05);
+  }
+  // Power LED
+  const ledGreen = new THREE.MeshStandardMaterial({color:0x00ff44, emissive:0x00ff44, emissiveIntensity:2.5});
+  box(0.012, 0.012, 0.01, ledGreen, hw-0.08, 0.36, dz - 0.06);
+
+  // ── OVERHEAD SHELF (above monitors) ──
+  box(W*2 - 0.08, 0.035, 0.28, deskTopMat, 0, 1.72, dz + 0.07);
+  // Shelf brackets
+  [[-hw+0.15, 0],[ hw-0.15, 0],[0,0]].forEach(([x])=>{
+    box(0.03, 0.2, 0.27, metalMat, x, 1.61, dz + 0.07);
+  });
+  // Items on shelf: binders, a radio
+  box(0.06, 0.18, 0.22, new THREE.MeshStandardMaterial({color:0x8b2020, roughness:0.9}), -1.6, 1.81, dz + 0.06);
+  box(0.06, 0.18, 0.22, new THREE.MeshStandardMaterial({color:0x1a4a8a, roughness:0.9}), -1.48, 1.81, dz + 0.06);
+  box(0.06, 0.18, 0.22, new THREE.MeshStandardMaterial({color:0x2a6a2a, roughness:0.9}), -1.36, 1.81, dz + 0.06);
+  // Walkie-talkie / radio
+  box(0.06, 0.16, 0.04, panelMat, 1.5, 1.81, dz + 0.06);
+  box(0.015, 0.12, 0.015, darkMetalMat, 1.5, 1.96, dz + 0.06); // antenna
+
+  // ── PRINTER / PLOTTER (right end of desk) ──
+  box(0.35, 0.12, 0.28, creamMat, hw-0.24, 0.96, dz + 0.1);
+  box(0.28, 0.01, 0.005, new THREE.MeshStandardMaterial({color:0xf0ead0}), hw-0.24, 1.02, dz - 0.04);
+  addLabel("Log printer", new THREE.Vector3(hw-0.24, 1.2, dz));
+}
+// ─── BRAND BACKBOARD ────────────────────────────────────────────────────────
+function addBrandBoard() {
+  // Mounted on the back wall above the workstation monitors
+  // Board backing plate (brushed dark metal)
+  const boardW = 2.2, boardH = 0.52, boardD = 0.04;
+  const boardMat = new THREE.MeshStandardMaterial({
+    color: 0x0a0e14, roughness: 0.35, metalness: 0.80,
+    envMapIntensity: 1.5,
+  });
+  const boardMesh = box(boardW, boardH, boardD, boardMat, 0, 1.95, -hl + 0.03);
+
+  // Gold accent bar (top edge)
+  const goldMat = new THREE.MeshStandardMaterial({ color: 0xc8960a, roughness: 0.22, metalness: 0.95 });
+  box(boardW, 0.018, boardD + 0.002, goldMat, 0, 1.95 + boardH/2 - 0.009, -hl + 0.03);
+  // Gold accent bar (bottom edge)
+  box(boardW, 0.018, boardD + 0.002, goldMat, 0, 1.95 - boardH/2 + 0.009, -hl + 0.03);
+  // Left edge bar
+  box(0.018, boardH, boardD + 0.002, goldMat, -boardW/2 + 0.009, 1.95, -hl + 0.03);
+  // Right edge bar
+  box(0.018, boardH, boardD + 0.002, goldMat, boardW/2 - 0.009, 1.95, -hl + 0.03);
+
+  // ── Brand canvas texture ──
+  const bCanvas = document.createElement('canvas');
+  bCanvas.width = 1024; bCanvas.height = 256;
+  const bCtx = bCanvas.getContext('2d');
+
+  // Background
+  bCtx.fillStyle = '#07090e';
+  bCtx.fillRect(0, 0, 1024, 256);
+
+  // Subtle geometric grid lines
+  bCtx.strokeStyle = 'rgba(180,140,20,0.07)';
+  bCtx.lineWidth = 1;
+  for (let x = 0; x < 1024; x += 48) {
+    bCtx.beginPath(); bCtx.moveTo(x, 0); bCtx.lineTo(x, 256); bCtx.stroke();
+  }
+  for (let y = 0; y < 256; y += 48) {
+    bCtx.beginPath(); bCtx.moveTo(0, y); bCtx.lineTo(1024, y); bCtx.stroke();
+  }
+
+  // Thin gold horizontal rule
+  bCtx.strokeStyle = 'rgba(210,160,20,0.55)';
+  bCtx.lineWidth = 1.5;
+  bCtx.beginPath(); bCtx.moveTo(60, 82); bCtx.lineTo(964, 82); bCtx.stroke();
+  bCtx.beginPath(); bCtx.moveTo(60, 178); bCtx.lineTo(964, 178); bCtx.stroke();
+
+  // Small left logo mark — a stylised diamond / drill-bit tip
+  bCtx.save();
+  bCtx.translate(68, 130);
+  bCtx.strokeStyle = '#c8960a';
+  bCtx.lineWidth = 2.5;
+  bCtx.beginPath();
+  bCtx.moveTo(0, -28); bCtx.lineTo(18, 0); bCtx.lineTo(0, 28); bCtx.lineTo(-18, 0);
+  bCtx.closePath(); bCtx.stroke();
+  bCtx.fillStyle = 'rgba(200,150,10,0.18)';
+  bCtx.fill();
+  // Inner diamond
+  bCtx.beginPath();
+  bCtx.moveTo(0, -14); bCtx.lineTo(9, 0); bCtx.lineTo(0, 14); bCtx.lineTo(-9, 0);
+  bCtx.closePath();
+  bCtx.fillStyle = 'rgba(200,150,10,0.5)'; bCtx.fill();
+  bCtx.restore();
+
+  // SERHOUDJI — main brand name
+  bCtx.font = 'bold 72px "Arial Narrow", Arial, sans-serif';
+  bCtx.letterSpacing = '12px';
+  bCtx.textAlign = 'center';
+  // Glow effect
+  bCtx.shadowColor = 'rgba(200,150,10,0.7)';
+  bCtx.shadowBlur = 18;
+  const grad = bCtx.createLinearGradient(200, 88, 800, 170);
+  grad.addColorStop(0,   '#f0d060');
+  grad.addColorStop(0.35,'#e8b820');
+  grad.addColorStop(0.65,'#ffd84a');
+  grad.addColorStop(1,   '#c8960a');
+  bCtx.fillStyle = grad;
+  bCtx.fillText('SERHOUDJI', 540, 148);
+  bCtx.shadowBlur = 0;
+
+  // Subtitle
+  bCtx.font = '500 22px "Arial", sans-serif';
+  bCtx.letterSpacing = '5px';
+  bCtx.fillStyle = 'rgba(210,195,150,0.72)';
+  bCtx.fillText('NEXT-GENERATION OIL FIELD SOLUTIONS', 540, 200);
+
+  // Right logo mark (mirror)
+  bCtx.save();
+  bCtx.translate(956, 130);
+  bCtx.strokeStyle = '#c8960a'; bCtx.lineWidth = 2.5;
+  bCtx.beginPath();
+  bCtx.moveTo(0,-28); bCtx.lineTo(18,0); bCtx.lineTo(0,28); bCtx.lineTo(-18,0);
+  bCtx.closePath(); bCtx.stroke();
+  bCtx.fillStyle = 'rgba(200,150,10,0.18)'; bCtx.fill();
+  bCtx.beginPath();
+  bCtx.moveTo(0,-14); bCtx.lineTo(9,0); bCtx.lineTo(0,14); bCtx.lineTo(-9,0);
+  bCtx.closePath();
+  bCtx.fillStyle = 'rgba(200,150,10,0.5)'; bCtx.fill();
+  bCtx.restore();
+
+  const boardTex = new THREE.CanvasTexture(bCanvas);
+  boardTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+  // Apply texture as a flat panel sitting just in front of the board
+  const faceGeo = new THREE.PlaneGeometry(boardW - 0.06, boardH - 0.06);
+  const faceMat = new THREE.MeshStandardMaterial({
+    map: boardTex, roughness: 0.30, metalness: 0.12,
+    emissive: 0x110e06, emissiveIntensity: 0.25,
+  });
+  const face = new THREE.Mesh(faceGeo, faceMat);
+  face.position.set(0, 1.95, -hl + 0.052);
+  scene.add(face);
+
+  // Brand spotlight (warm narrow beam pointing at the board)
+  const brandSpot = new THREE.SpotLight(0xffdd88, 18, 3.5, Math.PI * 0.18, 0.55, 2);
+  brandSpot.position.set(0, H - 0.1, -hl + 1.5);
+  brandSpot.target.position.set(0, 1.95, -hl);
+  brandSpot.castShadow = false;
+  scene.add(brandSpot);
+  scene.add(brandSpot.target);
+
+  // Two small downlights flanking the board
+  [-0.85, 0.85].forEach(ox => {
+    const dl = new THREE.PointLight(0xffd070, 1.8, 1.2, 2);
+    dl.position.set(ox, H - 0.15, -hl + 0.3);
+    scene.add(dl);
+    // Small recessed cylinder
+    const cylGeo = new THREE.CylinderGeometry(0.04, 0.05, 0.06, 10);
+    const cyl = new THREE.Mesh(cylGeo, metalMat);
+    cyl.position.set(ox, H - 0.04, -hl + 0.3);
+    scene.add(cyl);
+  });
+}
+addBrandBoard();
+
+addWorkstation();
+
+// ─── 2. OPERATOR CHAIR ──────────────────────────────────────────────────────
+function addChair() {
+  const cx = 0, cz = -hl + 1.3;
+  // Seat cushion
+  box(0.52, 0.07, 0.50, chairMat, cx, 0.50, cz);
+  // Seat back
+  box(0.52, 0.60, 0.07, chairMat, cx, 0.85, cz - 0.22);
+  // Lumbar support
+  box(0.40, 0.14, 0.04, new THREE.MeshStandardMaterial({color:0x1e1e18, roughness:0.9}), cx, 0.68, cz - 0.24);
+  // Armrests
+  box(0.05, 0.035, 0.34, chairMat,  0.24, 0.64, cz - 0.05);
+  box(0.05, 0.035, 0.34, chairMat, -0.24, 0.64, cz - 0.05);
+  // Central column
+  box(0.06, 0.38, 0.06, metalMat, cx, 0.24, cz);
+  // Wheel base (star shape approximated with cross)
+  box(0.52, 0.04, 0.08, metalMat, cx, 0.05, cz);
+  box(0.08, 0.04, 0.52, metalMat, cx, 0.05, cz);
+}
+addChair();
+
+// ─── 3. SAMPLE PREPARATION BENCH (left wall) ────────────────────────────────
+function addSampleBench() {
+  const bx = -hw + 0.35;
+  const bLen = 5.5;
+  const bz  = -1.5; // centre Z
+
+  // Bench body
+  box(0.62, 0.80, bLen, deskMat,    bx, 0.40, bz);
+  // Bench top surface (darker, chemical-resistant)
+  box(0.64, 0.035, bLen, benchTopMat, bx, 0.82, bz);
+  // Front kick panel
+  box(0.04, 0.80, bLen, darkMetalMat, bx + 0.31, 0.40, bz);
+  // Understorage shelf
+  box(0.58, 0.03, bLen - 0.2, darkMetalMat, bx, 0.22, bz);
+
+  // Wall-mounted overhead cabinet
+  box(0.30, 0.55, bLen - 0.5, deskMat, -hw + 0.17, 1.62, bz);
+  // Cabinet doors (lines)
+  for (let z2 = bz - bLen/2 + 0.5; z2 < bz + bLen/2 - 0.4; z2 += 0.9) {
+    box(0.005, 0.50, 0.82, darkMetalMat, -hw + 0.02, 1.62, z2 + 0.45);
+  }
+
+  // ══ BINOCULAR MICROSCOPE (detailed) ══
+  const msx = bx + 0.02, msz = bz + 1.8;
+  const msBlack = new THREE.MeshStandardMaterial({color:0x111110, roughness:0.35, metalness:0.75});
+  const msChrome= new THREE.MeshStandardMaterial({map:brushedMetalTex, color:0xaaaaaa, roughness:0.18, metalness:0.92});
+  const msGlass = new THREE.MeshStandardMaterial({color:0x223344, roughness:0.05, metalness:0.6, transparent:true, opacity:0.82});
+  function cyl(r1,r2,h,mat,x,y,z,ry){ const m=new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,h,18),mat); m.position.set(x,y,z); if(ry) m.rotation.y=ry; m.castShadow=true; scene.add(m); return m; }
+  // Heavy horseshoe base
+  cyl(0.072,0.08,0.018,msChrome, msx,0.838,msz);
+  box(0.155,0.016,0.14,msChrome, msx,0.838,msz);
+  // Stage plate
+  box(0.14,0.012,0.13,new THREE.MeshStandardMaterial({color:0x888878,roughness:0.3,metalness:0.8}), msx,0.858,msz);
+  // Coarse focus knobs (two cylinders each side)
+  cyl(0.018,0.02,0.04,msChrome, msx-0.065,0.97,msz-0.01,0); cyl(0.018,0.02,0.04,msChrome, msx+0.065,0.97,msz-0.01,0);
+  // Fine focus knobs (smaller)
+  cyl(0.012,0.013,0.035,msChrome, msx-0.065,0.93,msz-0.01,0); cyl(0.012,0.013,0.035,msChrome, msx+0.065,0.93,msz-0.01,0);
+  // Arm / pillar
+  box(0.035,0.32,0.04,msBlack, msx,0.99,msz-0.025);
+  // Body head (trapezoid approximated)
+  box(0.09,0.07,0.10,msBlack, msx,1.14,msz-0.04);
+  // Nosepiece turret
+  cyl(0.035,0.04,0.045,msBlack, msx,1.108,msz-0.04);
+  // Three objective lenses
+  [[0,0.03,-0.045],[0.03,0,-0.035],[-0.03,0,-0.035]].forEach(([dx,dz2],i)=>{
+    cyl(0.008,0.01,0.04+i*0.01,msBlack, msx+dx,1.068-i*0.005,msz-0.04+dz2);
+    cyl(0.006,0.008,0.01,msGlass, msx+dx,1.047-i*0.005,msz-0.04+dz2);
+  });
+  // Binocular head
+  box(0.08,0.055,0.065,msBlack, msx,1.185,msz-0.035);
+  // Two eyepiece tubes angled
+  [-0.022,0.022].forEach(dx=>{
+    cyl(0.013,0.015,0.08,msBlack, msx+dx,1.235,msz-0.035); // tube
+    cyl(0.015,0.018,0.022,msBlack,msx+dx,1.277,msz-0.035); // eyecup
+    cyl(0.011,0.011,0.01,msGlass, msx+dx,1.248,msz-0.035); // glass
+  });
+  // Condenser under stage
+  cyl(0.028,0.03,0.04,msBlack, msx,0.828,msz);
+  // Light source base glow
+  const lightGlow=new THREE.MeshStandardMaterial({color:0xfff8e8,emissive:0xfff8e8,emissiveIntensity:1.5});
+  cyl(0.025,0.025,0.006,lightGlow, msx,0.807,msz);
+  addLabel("Binocular microscope", new THREE.Vector3(msx+0.28, 1.35, msz));
+
+  // ══ SAMPLE TRAYS — petri-dish style ══
+  [-0.8, 0.2, 1.2].forEach((tz, i) => {
+    // Tray body (shallow dish)
+    cyl(0.13,0.14,0.022,new THREE.MeshStandardMaterial({color:0x2a2a28,roughness:0.5,metalness:0.3}), bx+0.02,0.845,bz+tz);
+    cyl(0.12,0.12,0.012,new THREE.MeshStandardMaterial({color:0x1a1a18,roughness:0.6}), bx+0.02,0.852,bz+tz);
+    // Cuttings inside — varied rock colours
+    const cuttingCols=[0x9a8060,0x7a6a50,0x8a7868,0x6a5848,0xb09070];
+    for(let s=0;s<14;s++){
+      const angle=Math.random()*Math.PI*2, r=Math.random()*0.09;
+      const sz2=0.008+Math.random()*0.014;
+      const m2=new THREE.Mesh(new THREE.DodecahedronGeometry(sz2,0),
+        new THREE.MeshStandardMaterial({color:cuttingCols[s%cuttingCols.length],roughness:0.88}));
+      m2.position.set(bx+0.02+Math.cos(angle)*r,0.862,bz+tz+Math.sin(angle)*r);
+      m2.rotation.set(Math.random()*Math.PI,Math.random()*Math.PI,0);
+      m2.castShadow=true; scene.add(m2);
+    }
+    // Sample label card
+    box(0.08,0.001,0.055,new THREE.MeshStandardMaterial({color:0xf0ead8,roughness:0.9}), bx+0.13,0.838,bz+tz+0.08);
+    addLabel(`Sample tray ${i+1}`, new THREE.Vector3(bx + 0.32, 0.96, bz + tz));
+  });
+
+  // ══ MUD BALANCE (detailed) ══
+  const mbz = bz - 1.8;
+  const mbMat = new THREE.MeshStandardMaterial({color:0xc8c0a8, roughness:0.45, metalness:0.25});
+  // Base — heavy cast aluminium shape
+  box(0.34,0.025,0.09,mbMat, bx+0.02,0.834,mbz);
+  // Support posts
+  box(0.016,0.05,0.016,mbMat, bx+0.02-0.06,0.862,mbz); box(0.016,0.05,0.016,mbMat, bx+0.02+0.06,0.862,mbz);
+  // Knife-edge fulcrum
+  cyl(0.006,0.001,0.025,mbMat, bx+0.02,0.875,mbz,[0,0,Math.PI/2]);
+  // Balance arm beam
+  box(0.30,0.008,0.008,mbMat, bx+0.02,0.878,mbz);
+  // Rider weight (sliding)
+  box(0.016,0.022,0.018,new THREE.MeshStandardMaterial({color:0x888870,roughness:0.4,metalness:0.6}), bx+0.02+0.06,0.878,mbz);
+  // Cup end (cylindrical)
+  cyl(0.028,0.032,0.04,mbMat, bx+0.02+0.13,0.878,mbz);
+  // Mud inside cup
+  cyl(0.026,0.026,0.01,new THREE.MeshStandardMaterial({color:0x6a5830,roughness:0.95}), bx+0.02+0.13,0.898,mbz);
+  // Counterweight other end
+  cyl(0.022,0.022,0.035,mbMat, bx+0.02-0.13,0.878,mbz);
+  // Level bubble tube
+  cyl(0.008,0.008,0.06,new THREE.MeshStandardMaterial({color:0x4488aa,roughness:0.1,metalness:0.5,transparent:true,opacity:0.7}), bx+0.02,0.886,mbz+0.025);
+  addLabel("Mud balance (density)", new THREE.Vector3(bx + 0.32, 1.05, mbz));
+
+  // ══ UV FLUORESCENCE LAMP (detailed) ══
+  const uvx=bx+0.02, uvz=bz-0.5;
+  const uvBodyMat=new THREE.MeshStandardMaterial({color:0x1a1a20,roughness:0.5,metalness:0.6});
+  // Main housing box with rounded feel
+  box(0.20,0.075,0.12,uvBodyMat, uvx,0.878,uvz);
+  // Front grille slots
+  for(let gs=0;gs<5;gs++) box(0.003,0.055,0.10,darkMetalMat, uvx-0.07+gs*0.035,0.878,uvz-0.061);
+  // UV tube (glowing purple-blue)
+  const uvTubeMat=new THREE.MeshStandardMaterial({color:0x9933ff,emissive:0x6600cc,emissiveIntensity:2.0,roughness:0.3});
+  cyl(0.009,0.009,0.16,uvTubeMat, uvx,0.888,uvz-0.04,[Math.PI/2,0,0]);
+  // UV glow point light
+  const uvLight=new THREE.PointLight(0x8822ff,1.8,0.6,2); uvLight.position.set(uvx,0.888,uvz-0.04); scene.add(uvLight);
+  // Handle / grip
+  box(0.04,0.035,0.12,new THREE.MeshStandardMaterial({color:0x333340,roughness:0.8}), uvx+0.12,0.868,uvz);
+  // Power cable
+  box(0.01,0.01,0.18,new THREE.MeshStandardMaterial({color:0x111111,roughness:0.9}), uvx+0.14,0.855,uvz+0.09);
+  // ON indicator LED
+  const uvLED=new THREE.MeshStandardMaterial({color:0x00ff44,emissive:0x00ff44,emissiveIntensity:2.5});
+  box(0.014,0.014,0.008,uvLED, uvx-0.08,0.905,uvz-0.062);
+  addLabel("UV fluorescence lamp", new THREE.Vector3(bx + 0.38, 1.05, uvz));
+}
+addSampleBench();
+
+// ─── 4. EQUIPMENT RACK (19" rack-mount style) ────────────────────────────────
+function addEquipmentRack() {
+  const rx = hw - 0.30;
+  const rz = -2.2;
+  const rackMat19=new THREE.MeshStandardMaterial({color:0x101010,roughness:0.45,metalness:0.80});
+  const railMat=new THREE.MeshStandardMaterial({map:brushedMetalTex,color:0x707068,roughness:0.25,metalness:0.90});
+
+  // ── Outer cabinet frame ──
+  box(0.60,1.98,0.58,rackMat19, rx,0.99,rz);
+  // Front door frame opening
+  box(0.48,1.90,0.02,new THREE.MeshStandardMaterial({color:0x080808,roughness:0.3,metalness:0.9}), rx,0.99,rz-0.30);
+  // Top/bottom panels
+  box(0.60,0.03,0.58,railMat, rx,1.995,rz); box(0.60,0.03,0.58,railMat, rx,0.015,rz);
+  // Side ventilation slots
+  for(let y=0.2;y<1.8;y+=0.12){
+    box(0.005,0.06,0.40,new THREE.MeshStandardMaterial({color:0x050505}), rx-0.295,y,rz);
+    box(0.005,0.06,0.40,new THREE.MeshStandardMaterial({color:0x050505}), rx+0.295,y,rz);
+  }
+  // Rail strips (vertical, front)
+  box(0.022,1.90,0.022,railMat, rx-0.225,0.99,rz-0.295);
+  box(0.022,1.90,0.022,railMat, rx+0.225,0.99,rz-0.295);
+
+  // ── RACK UNITS ──
+  const units=[
+    {h:0.088,col:0x0a160a,label:'GAS TRAP CTRL',  ledCol:0x00ff44,ledRate:0.4},
+    {h:0.066,col:0x080812,label:'DATA ACQ UNIT',   ledCol:0x4488ff,ledRate:1.2},
+    {h:0.110,col:0x140808,label:'SENSOR MUX',      ledCol:0xff8800,ledRate:0.8},
+    {h:0.066,col:0x080808,label:'UPS 2400VA',      ledCol:0x00ff00,ledRate:0.1},
+    {h:0.088,col:0x0e0e08,label:'COMM IFACE',      ledCol:0xffff00,ledRate:2.0},
+    {h:0.066,col:0x080808,label:'DEPTH ENCODER',   ledCol:0x00ffff,ledRate:0.6},
+    {h:0.110,col:0x100808,label:'SIGNAL COND',     ledCol:0xff44aa,ledRate:1.5},
+    {h:0.066,col:0x080808,label:'PATCH PANEL',     ledCol:null,    ledRate:0},
+  ];
+  let uy=0.06;
+  units.forEach(u=>{
+    const uMat=new THREE.MeshStandardMaterial({color:u.col,roughness:0.50,metalness:0.72});
+    // Unit body
+    box(0.44,u.h-0.006,0.25,uMat, rx,uy+u.h/2,rz-0.16);
+    // Front face panel
+    box(0.44,u.h-0.006,0.012,uMat, rx,uy+u.h/2,rz-0.295);
+    // Rack ears
+    box(0.48,u.h-0.004,0.014,railMat, rx,uy+u.h/2,rz-0.296);
+    // Ear screws
+    [rx-0.22,rx+0.22].forEach(ex=>{
+      const screw=new THREE.Mesh(new THREE.CylinderGeometry(0.004,0.004,0.006,6),railMat);
+      screw.rotation.x=Math.PI/2; screw.position.set(ex,uy+u.h*0.5,rz-0.302);
+      scene.add(screw);
+    });
+    // Label
+    const lc2=document.createElement('canvas'); lc2.width=200; lc2.height=40;
+    const lctx=lc2.getContext('2d');
+    lctx.fillStyle=`#${u.col.toString(16).padStart(6,'0')}`; lctx.fillRect(0,0,200,40);
+    lctx.font='bold 14px Courier New'; lctx.fillStyle='rgba(180,180,160,0.85)'; lctx.textAlign='center';
+    lctx.fillText(u.label,100,26);
+    const lt=new THREE.CanvasTexture(lc2);
+    const lp=new THREE.Mesh(new THREE.PlaneGeometry(0.22,u.h*0.6),new THREE.MeshStandardMaterial({map:lt,roughness:0.6}));
+    lp.position.set(rx+0.04,uy+u.h/2,rz-0.302); scene.add(lp);
+    // LED
+    if(u.ledCol){
+      const lm=new THREE.MeshStandardMaterial({color:u.ledCol,emissive:u.ledCol,emissiveIntensity:2.5});
+      const led=box(0.014,0.014,0.008,lm, rx-0.18,uy+u.h*0.5,rz-0.303);
+      led.userData.blink=true; led.userData.blinkRate=u.ledRate; led.userData.blinkMat=lm;
+      // Tiny halo
+      const lm2=new THREE.MeshStandardMaterial({color:u.ledCol,emissive:u.ledCol,emissiveIntensity:0.8,transparent:true,opacity:0.3});
+      box(0.025,0.025,0.003,lm2, rx-0.18,uy+u.h*0.5,rz-0.303);
+    }
+    // VU meter bars (on some units)
+    if(Math.random()>0.5){
+      for(let b=0;b<8;b++){
+        const h2=0.008+Math.random()*(u.h*0.5);
+        const bMat=new THREE.MeshStandardMaterial({color:b<5?0x00cc44:b<7?0xffaa00:0xff2200,emissive:b<5?0x004418:0,emissiveIntensity:0.3});
+        box(0.012,h2,0.006,bMat, rx-0.04+b*0.018,uy+h2/2+0.01,rz-0.303);
+      }
+    }
+    uy+=u.h;
+  });
+
+  // ── Second rack (pump monitoring) ──
+  const rx2=hw-0.30, rz2=0.5;
+  box(0.58,1.52,0.55,rackMat19, rx2,0.76,rz2);
+  box(0.58,0.025,0.55,railMat, rx2,1.535,rz2); box(0.58,0.025,0.55,railMat, rx2,0.01,rz2);
+  box(0.020,1.50,0.020,railMat, rx2-0.215,0.76,rz2-0.275);
+  box(0.020,1.50,0.020,railMat, rx2+0.215,0.76,rz2-0.275);
+  let uy2=0.04;
+  [{h:0.10,c:0x000a00,l:0xff4444},{h:0.088,c:0x000800,l:0x44ff88},{h:0.10,c:0x080600,l:0xffaa00},{h:0.066,c:0x080008,l:0x4488ff},{h:0.088,c:0x000808,l:0x00ffcc}].forEach((u,i)=>{
+    const um=new THREE.MeshStandardMaterial({color:u.c,roughness:0.5,metalness:0.7});
+    box(0.42,u.h-0.006,0.24,um, rx2,uy2+u.h/2,rz2-0.155);
+    box(0.44,u.h-0.004,0.012,railMat, rx2,uy2+u.h/2,rz2-0.278);
+    const lm3=new THREE.MeshStandardMaterial({color:u.l,emissive:u.l,emissiveIntensity:2.5});
+    const l3=box(0.014,0.014,0.008,lm3, rx2-0.17,uy2+u.h*0.5,rz2-0.282);
+    l3.userData.blink=true; l3.userData.blinkRate=0.3+i*0.3; l3.userData.blinkMat=lm3;
+    uy2+=u.h;
+  });
+  addLabel("Sensor & data\nacquisition rack", new THREE.Vector3(rx-0.65, 2.1, rz));
+  addLabel("Pump monitoring\nrack", new THREE.Vector3(rx2-0.62, 1.7, rz2));
+}
+addEquipmentRack();
+
+// ─── 5. GAS TRAP / DEGASSER UNIT (detailed) ──────────────────────────────────
+function addGasTrap() {
+  const gx = hw - 0.35, gz = 2.5;
+  const gtMat  = new THREE.MeshStandardMaterial({map:panelTex, color:0x1a1e22, roughness:0.45, metalness:0.72});
+  const gtChrome=new THREE.MeshStandardMaterial({map:brushedMetalTex, color:0x909898, roughness:0.22, metalness:0.90});
+
+  // ── Main housing body (slightly tapered top) ──
+  box(0.44,0.82,0.38,gtMat, gx,0.42,gz);
+  box(0.40,0.06,0.34,gtMat, gx,0.855,gz); // shoulder
+  box(0.36,0.05,0.30,gtMat, gx,0.88,gz);  // neck
+  // Top hood / lid
+  box(0.46,0.055,0.40,gtChrome, gx,0.912,gz);
+
+  // ── Front panel details ──
+  // Pressure gauge (round)
+  const gaugeRingMat=new THREE.MeshStandardMaterial({color:0xb0a090,roughness:0.3,metalness:0.8});
+  const gaugeFaceMat=new THREE.MeshStandardMaterial({color:0xf0ead0,roughness:0.7});
+  function addGauge(x,y,z,r){
+    const ring=new THREE.Mesh(new THREE.CylinderGeometry(r,r,0.015,24),gaugeRingMat);
+    ring.rotation.x=Math.PI/2; ring.position.set(x,y,z); ring.castShadow=true; scene.add(ring);
+    const face=new THREE.Mesh(new THREE.CylinderGeometry(r*0.88,r*0.88,0.01,24),gaugeFaceMat);
+    face.rotation.x=Math.PI/2; face.position.set(x,y,z+0.006); scene.add(face);
+    // Needle
+    box(r*0.6,0.004,0.006,new THREE.MeshStandardMaterial({color:0xff2200,emissive:0xff3300,emissiveIntensity:0.8}), x+r*0.2,y,z+0.012,[0,0,-0.6]);
+  }
+  addGauge(gx-0.09, 0.72, gz-0.192, 0.045); // vacuum gauge
+  addGauge(gx+0.09, 0.68, gz-0.192, 0.038); // flow gauge
+
+  // ── Toggle switches (3) ──
+  [0.68,0.60,0.52].forEach((y,i)=>{
+    box(0.018,0.035,0.012,new THREE.MeshStandardMaterial({color:0x333330,roughness:0.6}), gx-0.09+i*0.06,y,gz-0.193);
+    const swCol=[0x00dd44,0xffaa00,0xff2200];
+    const swM=new THREE.MeshStandardMaterial({color:swCol[i],emissive:swCol[i],emissiveIntensity:1.5});
+    box(0.012,0.018,0.014,swM, gx-0.09+i*0.06,y+0.008,gz-0.197);
+    const swL=box(0.012,0.018,0.014,swM, gx-0.09+i*0.06,y+0.008,gz-0.197);
+    swL.userData.blink=true; swL.userData.blinkRate=0.3+i*0.2; swL.userData.blinkMat=swM;
+  });
+
+  // ── Motor body on top ──
+  const motorCyl=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.075,0.15,16),gtChrome);
+  motorCyl.position.set(gx,0.99,gz); motorCyl.castShadow=true; scene.add(motorCyl);
+  const motorHead=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.07,0.04,16),gtMat);
+  motorHead.position.set(gx,1.07,gz); motorHead.castShadow=true; scene.add(motorHead);
+  // Cooling fins on motor
+  for(let f=0;f<8;f++){
+    const finGeo=new THREE.BoxGeometry(0.155,0.012,0.012);
+    const fin=new THREE.Mesh(finGeo,gtChrome);
+    fin.position.set(gx,0.97+f*0.015,gz);
+    fin.rotation.y=f*(Math.PI/8);
+    fin.castShadow=true; scene.add(fin);
+  }
+
+  // ── Hose fittings (proper threaded cylinders) ──
+  function addHoseFitting(x,y,z,rotY){
+    const g=new THREE.Group(); g.position.set(x,y,z); g.rotation.y=rotY;
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.022,0.07,10),gtChrome);
+    body.rotation.x=Math.PI/2; body.position.z=0.04; g.add(body);
+    // Threads (rings)
+    for(let t=0;t<5;t++){
+      const tr=new THREE.Mesh(new THREE.TorusGeometry(0.022,0.003,6,10),gtChrome);
+      tr.position.z=0.01+t*0.012; g.add(tr);
+    }
+    // Hose (dark rubber)
+    const hose=new THREE.Mesh(new THREE.CylinderGeometry(0.014,0.014,0.22,8),rubberMat);
+    hose.rotation.x=Math.PI/2; hose.position.z=0.18; g.add(hose);
+    scene.add(g);
+  }
+  addHoseFitting(gx-0.12, 0.78, gz-0.195, 0);
+  addHoseFitting(gx+0.12, 0.78, gz-0.195, 0);
+  addHoseFitting(gx,       0.65, gz-0.195, 0);
+
+  // ── Vacuum line going up to ceiling ──
+  box(0.012,0.45,0.012,rubberMat, gx-0.12,1.175,gz-0.195);
+
+  // ── Mud inlet funnel ──
+  const funnelMat=new THREE.MeshStandardMaterial({color:0x2a3830,roughness:0.6,metalness:0.5});
+  const funnel=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.04,0.14,12),funnelMat);
+  funnel.position.set(gx,1.13,gz+0.06); funnel.castShadow=true; scene.add(funnel);
+  // Mud staining on funnel
+  box(0.08,0.02,0.08,new THREE.MeshStandardMaterial({color:0x5a4020,roughness:0.95}), gx,1.14,gz+0.06);
+
+  // ── Side label plate ──
+  const labelCanvas=document.createElement('canvas'); labelCanvas.width=256; labelCanvas.height=128;
+  const lc=labelCanvas.getContext('2d');
+  lc.fillStyle='#1a1e22'; lc.fillRect(0,0,256,128);
+  lc.strokeStyle='rgba(180,160,80,0.5)'; lc.lineWidth=2;
+  lc.strokeRect(4,4,248,120);
+  lc.font='bold 20px Arial'; lc.fillStyle='#c8b878'; lc.textAlign='center';
+  lc.fillText('GAS TRAP',128,40);
+  lc.font='11px Arial'; lc.fillStyle='rgba(180,160,80,0.7)';
+  lc.fillText('MODEL GT-3200', 128,62);
+  lc.fillText('VACUUM DEGASSER',128,80);
+  lc.fillText('MAX 25 inHg · 60Hz',128,98);
+  const lTex=new THREE.CanvasTexture(labelCanvas);
+  const lPlane=new THREE.Mesh(new THREE.PlaneGeometry(0.22,0.11),new THREE.MeshStandardMaterial({map:lTex,roughness:0.6}));
+  lPlane.position.set(gx,0.48,gz-0.193); scene.add(lPlane);
+
+  addLabel("Gas trap / degasser", new THREE.Vector3(gx-0.5, 1.15, gz));
+}
+addGasTrap();
+
+// ─── 6. FIRE EXTINGUISHER (detailed) ─────────────────────────────────────────
+function addFireExtinguisher() {
+  const fx = hw - 0.12, fz = hl - 0.8;
+  const redMat2=new THREE.MeshStandardMaterial({color:0xcc1111,roughness:0.38,metalness:0.35});
+  const chromeMat2=new THREE.MeshStandardMaterial({map:brushedMetalTex,color:0xb0b0a8,roughness:0.20,metalness:0.92});
+  // Main cylinder body
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(0.062,0.065,0.52,18),redMat2);
+  body.position.set(fx,0.33,fz); body.castShadow=true; scene.add(body);
+  // Top dome
+  const dome=new THREE.Mesh(new THREE.SphereGeometry(0.062,12,8,0,Math.PI*2,0,Math.PI/2),redMat2);
+  dome.position.set(fx,0.59,fz); scene.add(dome);
+  // Bottom dome
+  const bot=new THREE.Mesh(new THREE.SphereGeometry(0.065,12,8,0,Math.PI*2,Math.PI/2,Math.PI/2),redMat2);
+  bot.position.set(fx,0.07,fz); scene.add(bot);
+  // Neck ring
+  const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.030,0.058,0.04,12),chromeMat2);
+  neck.position.set(fx,0.63,fz); scene.add(neck);
+  // Valve head
+  const valve=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.028,0.06,10),chromeMat2);
+  valve.position.set(fx,0.68,fz); scene.add(valve);
+  // Pressure gauge on valve
+  const gRing=new THREE.Mesh(new THREE.CylinderGeometry(0.022,0.022,0.008,16),chromeMat2);
+  gRing.rotation.x=Math.PI/2; gRing.rotation.z=0.4;
+  gRing.position.set(fx-0.03,0.70,fz-0.02); scene.add(gRing);
+  const gFace=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.018,0.005,16),new THREE.MeshStandardMaterial({color:0xf0ead0,roughness:0.7}));
+  gFace.rotation.x=Math.PI/2; gFace.rotation.z=0.4;
+  gFace.position.set(fx-0.03,0.70,fz-0.024); scene.add(gFace);
+  // Handle + trigger
+  const handle=new THREE.Mesh(new THREE.TorusGeometry(0.028,0.007,6,14,Math.PI),chromeMat2);
+  handle.position.set(fx,0.695,fz); handle.rotation.x=Math.PI/2; scene.add(handle);
+  // Hose
+  const hosePoints=[];
+  for(let t=0;t<=12;t++){
+    const a=t/12;
+    hosePoints.push(new THREE.Vector3(fx-0.06-a*0.08,0.68-a*0.25,fz-0.01+Math.sin(a*Math.PI*2)*0.02));
+  }
+  const hoseCurve=new THREE.CatmullRomCurve3(hosePoints);
+  const hoseMesh=new THREE.Mesh(new THREE.TubeGeometry(hoseCurve,16,0.012,6,false),new THREE.MeshStandardMaterial({color:0x111111,roughness:0.9}));
+  hoseMesh.castShadow=true; scene.add(hoseMesh);
+  // Nozzle at end
+  const nozzle=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.010,0.06,10),chromeMat2);
+  nozzle.rotation.z=Math.PI/2; nozzle.position.set(fx-0.16,0.435,fz); scene.add(nozzle);
+  // Safety pin
+  box(0.004,0.04,0.004,chromeMat2, fx+0.025,0.695,fz);
+  // Wall bracket
+  box(0.04,0.12,0.018,chromeMat2, fx+0.09,0.43,fz);
+  box(0.04,0.025,0.08,chromeMat2, fx+0.09,0.49,fz+0.03);
+  // SERHOUDJI label band on cylinder
+  const extLbl=document.createElement('canvas'); extLbl.width=256; extLbl.height=64;
+  const elc=extLbl.getContext('2d');
+  elc.fillStyle='#ffffff'; elc.fillRect(0,0,256,64);
+  elc.font='bold 14px Arial'; elc.fillStyle='#cc1111'; elc.textAlign='center';
+  elc.fillText('FIRE EXTINGUISHER',128,22);
+  elc.font='10px Arial'; elc.fillStyle='#333333';
+  elc.fillText('CO₂  5kg  SERHOUDJI SAFETY',128,40);
+  elc.fillText('Inspect: Monthly',128,54);
+  const elTex=new THREE.CanvasTexture(extLbl);
+  const elMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.063,0.063,0.14,18),new THREE.MeshStandardMaterial({map:elTex,roughness:0.5}));
+  elMesh.position.set(fx,0.36,fz); scene.add(elMesh);
+}
+addFireExtinguisher();
+
+// ─── 7. SMALL SIDE TABLE + COFFEE MUG ───────────────────────────────────────
+function addSideTable() {
+  const sx = 0.4, sz = -hl + 1.5;
+  box(0.45, 0.03, 0.40, benchTopMat, sx, 0.72, sz);
+  // Legs
+  [[0.18,0.15],[0.18,-0.15],[-0.18,0.15],[-0.18,-0.15]].forEach(([dx,dz])=>{
+    box(0.03,0.72,0.03, metalMat, sx+dx, 0.36, sz+dz);
+  });
+  // Coffee mug
+  const mugCyl = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.035, 0.09, 10),
+    new THREE.MeshStandardMaterial({color:0xeeeee0, roughness:0.7})
+  );
+  mugCyl.position.set(sx + 0.05, 0.782, sz - 0.05);
+  scene.add(mugCyl);
+  // Mug handle
+  box(0.025,0.05,0.015, new THREE.MeshStandardMaterial({color:0xeeeee0,roughness:0.7}),
+      sx + 0.09, 0.782, sz - 0.05);
+  // Clipboard / paper on table
+  box(0.22, 0.005, 0.30, new THREE.MeshStandardMaterial({color:0xf0ead8,roughness:0.95}),
+      sx - 0.08, 0.738, sz + 0.02);
+}
+addSideTable();
+
+// ─── TEXT LABELS (canvas sprites) ───────────────────────────────────────────
+function addLabel(text, position) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 300; canvas.height = 80;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(0,0,0,0)';
+  ctx.fillRect(0, 0, 300, 80);
+  ctx.font = 'bold 18px Courier New';
+  ctx.fillStyle = 'rgba(255,180,50,0.85)';
+  ctx.textAlign = 'center';
+  const lines = text.split('\n');
+  lines.forEach((line, i) => {
+    ctx.fillText(line, 150, 28 + i * 26);
+  });
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.position.copy(position);
+  sprite.scale.set(1.2, 0.32, 1);
+  scene.add(sprite);
+}
+
+// ─── NAVIGATION (FPS style) ─────────────────────────────────────────────────
+const keys = {};
+document.addEventListener('keydown', e => keys[e.code] = true);
+document.addEventListener('keyup',   e => keys[e.code] = false);
+
+let yaw = 0, pitch = 0;
+let isLocked = false;
+
+const canvas = renderer.domElement;
+canvas.addEventListener('click', () => {
+  if (!isLocked) canvas.requestPointerLock();
+});
+
+document.addEventListener('pointerlockchange', () => {
+  isLocked = document.pointerLockElement === canvas;
+  document.getElementById('locked-indicator').classList.toggle('active', isLocked);
+});
+
+document.addEventListener('mousemove', e => {
+  if (!isLocked) return;
+  yaw   -= e.movementX * 0.0018;
+  pitch -= e.movementY * 0.0018;
+  pitch = Math.max(-Math.PI/2.5, Math.min(Math.PI/2.5, pitch));
+});
+
+// Movement bounds (inside the trailer)
+const BOUNDS_X = hw - 0.3;
+const BOUNDS_Z_MIN = -hl + 0.4;
+const BOUNDS_Z_MAX =  hl + 0.3;
+
+const moveDir = new THREE.Vector3();
+const rightDir = new THREE.Vector3();
+
+function updateMovement(delta) {
+  if (panelOpen) return; // freeze while inspecting
+  const speed = 2.8 * delta;
+  const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+  const right   = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+
+  moveDir.set(0,0,0);
+  if (keys['KeyW'] || keys['ArrowUp'])    moveDir.addScaledVector(forward, -speed);
+  if (keys['KeyS'] || keys['ArrowDown'])  moveDir.addScaledVector(forward,  speed);
+  if (keys['KeyA'] || keys['ArrowLeft'])  moveDir.addScaledVector(right,   -speed);
+  if (keys['KeyD'] || keys['ArrowRight']) moveDir.addScaledVector(right,    speed);
+
+  camera.position.add(moveDir);
+
+  // Clamp inside the trailer
+  camera.position.x = Math.max(-BOUNDS_X, Math.min(BOUNDS_X, camera.position.x));
+  camera.position.z = Math.max(BOUNDS_Z_MIN, Math.min(BOUNDS_Z_MAX, camera.position.z));
+  camera.position.y = 1.65; // fixed eye height
+
+  // Apply look direction
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
+}
+
+// ─── DEPTH COUNTER (simulated) ──────────────────────────────────────────────
+let simDepth = 2847;
+let lastDepthTime = 0;
+
+function updateDepth(time) {
+  if (time - lastDepthTime > 800) {
+    simDepth += Math.floor(Math.random() * 3);
+    document.getElementById('depth-val').textContent = simDepth.toLocaleString();
+    lastDepthTime = time;
+  }
+}
+
+// ─── FLICKER ────────────────────────────────────────────────────────────────
+function updateFlicker(time) {
+  const t = time * 0.001;
+  scene.traverse(obj => {
+    if ((obj.isLight) && obj.userData.flicker) {
+      const base = obj.userData.baseIntensity;
+      const f = base
+        + Math.sin(t * 17.3) * base * 0.07
+        + Math.sin(t * 41.7) * base * 0.04
+        + (Math.random() > 0.97 ? (Math.random() - 0.5) * base * 0.15 : 0);
+      obj.intensity = Math.max(0, f);
+    }
+  });
+}
+
+// ─── POSITION HUD ───────────────────────────────────────────────────────────
+let lastHudTime = 0;
+function updateHUD(time) {
+  if (time - lastHudTime > 100) {
+    const x = camera.position.x.toFixed(1);
+    const z = camera.position.z.toFixed(1);
+    document.getElementById('pos-display').textContent = `Position: X ${x}  Z ${z}`;
+    lastHudTime = time;
+  }
+}
+
+// ─── LED BLINK ───────────────────────────────────────────────────────────────
+function updateLEDs(time) {
+  scene.traverse(obj => {
+    if (obj.isMesh && obj.userData.blink) {
+      const on = Math.sin(time * 0.001 * obj.userData.blinkRate * Math.PI * 2) > 0;
+      obj.userData.blinkMat.emissiveIntensity = on ? 2.0 : 0.05;
+    }
+  });
+}
+
+// ─── INSTRUMENT DATABASE ─────────────────────────────────────────────────────
+const INSTRUMENTS = {
+  gas_chromatograph: {
+    title: 'Gas Chromatograph',
+    subtitle: 'Hydrocarbon component analyser — C1 to C5',
+    category: 'GAS ANALYSIS',
+    what: 'The gas chromatograph continuously separates and quantifies hydrocarbon gases extracted from the drilling mud — methane (C1), ethane (C2), propane (C3), iso-butane (iC4), normal-butane (nC4), and pentane (C5). It provides the primary live gas curve that the mud logger monitors throughout the entire drilling operation.',
+    how: 'Mud gas is extracted at the flow line by the degasser unit, then carried by a carrier gas (helium or nitrogen) through a separation column. Components travel through the column at different speeds based on their molecular weight and polarity. A Flame Ionisation Detector (FID) measures each component as it exits, producing a chromatogram every 60–120 seconds.',
+    geo: 'The gas ratio method — comparing C1/(C2+C3) and (C1+C2)/(C3+C4+C5) — helps differentiate thermogenic from biogenic gas and identify wet gas vs dry gas zones. Sudden spikes in total gas signal porous reservoir intervals. The "Pixler plot" using these ratios helps identify gas type and source.',
+    readings: [
+      { label: 'C1 Methane',   value: () => (2800 + Math.random()*400).toFixed(0),  unit: 'ppm' },
+      { label: 'C2 Ethane',    value: () => (180  + Math.random()*60).toFixed(1),   unit: 'ppm' },
+      { label: 'C3 Propane',   value: () => (42   + Math.random()*18).toFixed(1),   unit: 'ppm' },
+      { label: 'iC4',          value: () => (8.2  + Math.random()*4).toFixed(2),    unit: 'ppm' },
+      { label: 'nC4',          value: () => (11.4 + Math.random()*5).toFixed(2),    unit: 'ppm' },
+      { label: 'Total Gas',    value: () => (3040 + Math.random()*480).toFixed(0),  unit: 'ppm' },
+    ],
+  },
+  mud_balance: {
+    title: 'Mud Balance (Mud Density Scale)',
+    subtitle: 'Drilling fluid density measurement',
+    category: 'MUD PROPERTIES',
+    what: 'The mud balance measures the density (specific gravity) of the drilling fluid in g/cm³ or ppg (pounds per gallon). Maintaining the correct mud weight is one of the most critical tasks in well control — it must be heavy enough to prevent formation fluid influx (kick) but light enough to avoid fracturing the formation.',
+    how: 'A fixed-volume cup is filled with mud sample and balanced on a knife-edge fulcrum. A sliding rider weight is moved along the graduated arm until the bubble level is centred. The density is read directly from the scale. The measurement takes under 2 minutes and is performed every 15–30 minutes during drilling.',
+    geo: 'Mud density is calibrated against the formation pore pressure gradient. In overpressured zones (common in Algeria\'s Triassic and Devonian sections), pore pressure can exceed the normal hydrostatic gradient of 1.07 g/cm³, requiring heavier mud — typically 1.4 to 1.8 g/cm³ — to maintain wellbore stability.',
+    readings: [
+      { label: 'Mud density', value: () => (1.42 + Math.random()*0.04).toFixed(3), unit: 'g/cm³' },
+      { label: 'Equivalent', value: () => (11.8 + Math.random()*0.3).toFixed(2),  unit: 'ppg'   },
+      { label: 'Pore press.',  value: () => (0.68 + Math.random()*0.02).toFixed(3),unit: 'psi/ft'},
+      { label: 'Temp. corr.',  value: () => (62   + Math.random()*3).toFixed(1),   unit: '°C'   },
+    ],
+  },
+  microscope: {
+    title: 'Binocular Microscope',
+    subtitle: 'Drill cutting lithology analysis',
+    category: 'SAMPLE ANALYSIS',
+    what: 'The binocular microscope is the geologist\'s primary tool for describing drill cuttings — fragments of rock broken by the bit and carried to surface by the drilling mud. Each sample (typically every 5 or 10 metres) is washed, dried, and examined to build the lithological log in real time.',
+    how: 'Cuttings are examined under 10×–40× magnification in both reflected and transmitted light. The geologist identifies rock type, mineral composition, grain size, sorting, porosity type (inter-granular, vuggy, fracture), cementation, and hydrocarbon staining. UV illumination is used to detect fluorescence indicating liquid hydrocarbons.',
+    geo: 'Lithological descriptions derived from cuttings guide real-time decisions: identifying formation tops, correlating to regional stratigraphy, and targeting reservoir intervals. In Algeria\'s Hassi Messaoud field, Cambrian quartzite reservoirs are identified by their characteristic frosted quartz grains and pink feldspar under the scope.',
+    readings: [
+      { label: 'Sample depth', value: () => (2847 + Math.floor(Math.random()*3)).toFixed(0), unit: 'm' },
+      { label: 'Grain size',   value: () => ['Fine','Med','Coarse'][Math.floor(Math.random()*3)], unit: '' },
+      { label: 'Fluorescence', value: () => Math.random()>0.5 ? 'PRESENT' : 'ABSENT', unit: '' },
+      { label: 'Lithology',    value: () => ['Sandstone','Shale','Limestone'][Math.floor(Math.random()*3)], unit: '' },
+    ],
+  },
+  uv_lamp: {
+    title: 'UV Fluorescence Lamp',
+    subtitle: 'Crude oil and condensate detector',
+    category: 'SHOW DETECTION',
+    what: 'The ultraviolet lamp causes crude oil and condensate in drill cuttings and mud to fluoresce under short-wave (254 nm) or long-wave (366 nm) UV light. It is used to rapidly screen every sample for hydrocarbon shows, even when concentrations are too low to register on the gas detectors.',
+    how: 'Washed cuttings or a mud sample are placed under the UV lamp in a darkened area. Crude oil fluoresces in colours ranging from brown (heavy oil) through gold and orange (medium gravity) to blue-white and white (light condensate and gas condensate). The intensity and colour of fluorescence indicates hydrocarbon type and saturation.',
+    geo: 'UV fluorescence is often the first indication of a potential pay zone. The "cut fluorescence test" — dissolving cuttings in solvent then examining the extract under UV — distinguishes live oil fluorescence from dead oil staining. In the Saharan platform, Silurian hot shales show characteristic brown fluorescence from disseminated organic matter.',
+    readings: [
+      { label: 'UV wavelength', value: () => '366',                              unit: 'nm'  },
+      { label: 'Last show',     value: () => (2841 + Math.floor(Math.random()*5)).toFixed(0), unit: 'm' },
+      { label: 'Fluor. colour', value: () => ['Gold','Amber','Blue-white'][Math.floor(Math.random()*3)], unit: '' },
+      { label: 'Intensity',     value: () => ['Faint','Moderate','Bright'][Math.floor(Math.random()*3)], unit: '' },
+    ],
+  },
+  gas_trap: {
+    title: 'Gas Trap / Degasser',
+    subtitle: 'Mud gas extraction unit',
+    category: 'GAS EXTRACTION',
+    what: 'The gas trap is a mechanical device installed at the possum belly (back tank) of the shale shaker. It uses a motor-driven impeller to agitate the mud and liberate dissolved and entrained formation gases, which are then transported via a vacuum line to the gas chromatograph for analysis.',
+    how: 'The impeller creates a vortex in the mud flow, breaking surface tension and releasing gas bubbles. A vacuum pump pulls the liberated gas through a heated sample line (to prevent condensation) to the chromatograph\'s inlet. Flow rate and mud temperature affect extraction efficiency — typically 10–35% of total gas in the mud is recovered.',
+    geo: 'The gas trap responds almost instantly to formation gas entering the mud at the bit — typically within one full circulation lag time (the time for mud to travel from bit to surface). Calculating the lag time precisely is essential: it is the depth correction that synchronises gas shows with the formation being drilled at the moment of detection.',
+    readings: [
+      { label: 'Motor RPM',    value: () => (1440 + Math.floor(Math.random()*40)).toFixed(0), unit: 'rpm' },
+      { label: 'Vacuum',       value: () => (18.5 + Math.random()*2).toFixed(1),  unit: 'inHg' },
+      { label: 'Line temp.',   value: () => (68   + Math.random()*5).toFixed(1),  unit: '°C'   },
+      { label: 'Flow rate',    value: () => (2.8  + Math.random()*0.4).toFixed(2),unit: 'L/min'},
+    ],
+  },
+  workstation: {
+    title: 'Logging Workstation',
+    subtitle: 'Real-time data acquisition & interpretation',
+    category: 'DATA SYSTEMS',
+    what: 'The workstation is the nerve centre of the mud logging unit. It receives live sensor data from all instruments — depth encoder, gas sensors, mud property sensors, drilling mechanics — and displays them as continuous log curves. The mud logger monitors this data 24 hours a day to detect formation changes and potential well control events.',
+    how: 'Depth is measured by an encoder on the drawworks or top drive, providing a real-time depth reference to which all other parameters are tied. Data is recorded at a configurable depth step (typically 0.1 or 0.5 m) and time interval, stored in LAS (Log ASCII Standard) format, and transmitted in real time to the oil company\'s office via satellite.',
+    geo: 'Formation evaluation from mud log data involves integrating ROP (rate of penetration) — which spikes in porous and permeable zones — with gas shows, lithology, and mud properties. A classic "triple combo" on the mud log — ROP increase + gas show + change in lithology — is a strong indicator of a potential reservoir interval.',
+    readings: [
+      { label: 'ROP',         value: () => (8.5  + Math.random()*6).toFixed(1),   unit: 'm/hr' },
+      { label: 'WOB',         value: () => (12.4 + Math.random()*3).toFixed(1),   unit: 'klbs' },
+      { label: 'RPM',         value: () => (120  + Math.floor(Math.random()*20)).toFixed(0), unit: 'rpm'},
+      { label: 'Torque',      value: () => (8.2  + Math.random()*2).toFixed(1),   unit: 'kNm' },
+      { label: 'Flow in',     value: () => (38.5 + Math.random()*2).toFixed(1),   unit: 'L/s' },
+      { label: 'SPM',         value: () => (62   + Math.floor(Math.random()*5)).toFixed(0),  unit: 'spm'},
+    ],
+  },
+  equipment_rack: {
+    title: 'Sensor & Data Acquisition Rack',
+    subtitle: 'Signal conditioning and multiplexing',
+    category: 'ELECTRONICS',
+    what: 'The equipment rack houses the electronic backbone of the logging unit: signal conditioners that convert raw sensor outputs into calibrated engineering units, a multiplexer that combines all data channels, a UPS (Uninterruptible Power Supply) to protect data during generator switchovers, and communication interfaces for satellite transmission.',
+    how: 'Each sensor (pressure transducer, flow meter, encoder, gas detector) produces a 4–20 mA current signal or digital RS-485 output. The signal conditioners amplify, filter, and convert these to the data acquisition computer. The depth encoder provides a pulse-per-unit-depth signal that triggers all other measurements, ensuring perfect depth registration.',
+    geo: 'Accurate depth registration is geologically critical — errors of even 0.5 m can cause misidentification of formation tops in thin-bedded reservoirs. The rack\'s depth encoder system, combined with stretch corrections for the drill string, ensures that gas shows, ROP changes, and lithological picks are correctly tied to measured depth.',
+    readings: [
+      { label: 'Channels',    value: () => '48',                                  unit: 'active'},
+      { label: 'Sample rate', value: () => '10',                                  unit: 'Hz'   },
+      { label: 'UPS charge',  value: () => (94 + Math.floor(Math.random()*5)).toFixed(0), unit: '%' },
+      { label: 'Sat. signal', value: () => (82 + Math.floor(Math.random()*8)).toFixed(0), unit: '%' },
+    ],
+  },
+};
+
+// ─── HOTSPOT DEFINITIONS ─────────────────────────────────────────────────────
+// Each hotspot: world position, radius for proximity check, instrument key
+const HOTSPOTS = [
+  { pos: new THREE.Vector3(-0.8, 1.2, -hl + 0.55), radius: 1.6, key: 'gas_chromatograph',  label: 'Gas Chromatograph' },
+  { pos: new THREE.Vector3(-hw+0.35, 0.87, -hl+4.2), radius: 1.2, key: 'mud_balance',     label: 'Mud Balance'        },
+  { pos: new THREE.Vector3(-hw+0.35, 1.1,  -hl+5.7), radius: 1.2, key: 'microscope',      label: 'Microscope'         },
+  { pos: new THREE.Vector3(-hw+0.35, 0.9,  -hl+4.9), radius: 1.2, key: 'uv_lamp',         label: 'UV Fluorescence Lamp'},
+  { pos: new THREE.Vector3(hw-0.3,   0.7,   2.5),    radius: 1.3, key: 'gas_trap',         label: 'Gas Trap / Degasser'},
+  { pos: new THREE.Vector3(0,        1.3,  -hl+0.6), radius: 1.8, key: 'workstation',      label: 'Logging Workstation'},
+  { pos: new THREE.Vector3(hw-0.3,   1.0,  -2.2),    radius: 1.4, key: 'equipment_rack',   label: 'Equipment Rack'     },
+];
+
+// ─── HOTSPOT SPHERE MARKERS (subtle glow rings in the scene) ─────────────────
+HOTSPOTS.forEach(h => {
+  const geo = new THREE.SphereGeometry(0.06, 10, 10);
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xffcc44, emissive: 0xffcc44, emissiveIntensity: 1.5,
+    transparent: true, opacity: 0.75,
+  });
+  const sphere = new THREE.Mesh(geo, mat);
+  sphere.position.copy(h.pos);
+  sphere.userData.hotspotPulse = true;
+  scene.add(sphere);
+  h.markerMesh = sphere;
+
+  // Floating ring around it
+  const ringGeo = new THREE.TorusGeometry(0.13, 0.012, 8, 24);
+  const ringMat = new THREE.MeshStandardMaterial({
+    color: 0xffcc44, emissive: 0xffcc44, emissiveIntensity: 1.0,
+    transparent: true, opacity: 0.5,
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.position.copy(h.pos);
+  ring.rotation.x = Math.PI/2;
+  ring.userData.hotspotRing = true;
+  scene.add(ring);
+  h.ringMesh = ring;
+});
+
+// ─── INSPECT PANEL LOGIC ─────────────────────────────────────────────────────
+let panelOpen = false;
+let nearestHotspot = null;
+const promptEl  = document.getElementById('inspect-prompt');
+const overlayEl = document.getElementById('info-overlay');
+const _pos2 = new THREE.Vector3();
+
+function openPanel(key) {
+  const data = INSTRUMENTS[key];
+  if (!data) return;
+  panelOpen = true;
+
+  document.getElementById('info-category').textContent = data.category;
+  document.getElementById('info-title').textContent    = data.title;
+  document.getElementById('info-subtitle').textContent = data.subtitle;
+  document.getElementById('info-what').textContent     = data.what;
+  document.getElementById('info-how').textContent      = data.how;
+  document.getElementById('info-geo').textContent      = data.geo;
+
+  // Live readings
+  const grid = document.getElementById('info-readings-grid');
+  grid.innerHTML = '';
+  data.readings.forEach(r => {
+    const val = typeof r.value === 'function' ? r.value() : r.value;
+    const card = document.createElement('div');
+    card.className = 'reading-card';
+    card.innerHTML = `<div class="reading-label">${r.label}</div>
+      <span class="reading-value">${val}</span>
+      <span class="reading-unit">${r.unit}</span>`;
+    grid.appendChild(card);
+  });
+
+  overlayEl.classList.remove('hidden');
+  document.exitPointerLock();
+}
+
+function closePanel() {
+  panelOpen = false;
+  overlayEl.classList.add('hidden');
+  setTimeout(() => {
+    if (!panelOpen) renderer.domElement.requestPointerLock();
+  }, 200);
+}
+
+// E key — inspect or close
+document.addEventListener('keydown', e => {
+  if (e.code === 'KeyE') {
+    if (panelOpen) { closePanel(); return; }
+    if (nearestHotspot) openPanel(nearestHotspot.key);
+  }
+  if (e.code === 'Escape' && panelOpen) closePanel();
+});
+
+// Click overlay background to close
+overlayEl.addEventListener('click', e => {
+  if (e.target === overlayEl) closePanel();
+});
+
+// ─── HOTSPOT PROXIMITY CHECK ─────────────────────────────────────────────────
+function updateHotspots(time) {
+  if (panelOpen) {
+    promptEl.classList.remove('visible');
+    return;
+  }
+  let closest = null, closestDist = Infinity;
+  HOTSPOTS.forEach(h => {
+    const d = camera.position.distanceTo(h.pos);
+    if (d < h.radius && d < closestDist) {
+      closestDist = d; closest = h;
+    }
+    // Pulse animation on markers
+    const pulse = 0.85 + 0.15 * Math.sin(time * 0.002 + h.pos.z);
+    if (h.markerMesh) {
+      h.markerMesh.material.emissiveIntensity = pulse * 1.8;
+      h.markerMesh.scale.setScalar(pulse);
+    }
+    if (h.ringMesh) {
+      h.ringMesh.rotation.z += 0.008;
+      h.ringMesh.material.opacity = 0.3 + pulse * 0.3;
+    }
+  });
+
+  nearestHotspot = closest;
+  if (closest) {
+    document.getElementById('inspect-name').textContent = closest.label;
+    promptEl.classList.add('visible');
+  } else {
+    promptEl.classList.remove('visible');
+  }
+}
+
+// ─── RENDER LOOP ────────────────────────────────────────────────────────────
+let prevTime = performance.now();
+
+function animate(time) {
+  requestAnimationFrame(animate);
+  const delta = Math.min((time - prevTime) / 1000, 0.05);
+  prevTime = time;
+
+  updateMovement(delta);
+  updateFlicker(time);
+  updateDepth(time);
+  updateHUD(time);
+  updateLEDs(time);
+  updateHotspots(time);
+
+  renderer.render(scene, camera);
+}
+animate(performance.now());
+
+// ─── RESIZE ─────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ─── START BUTTON ───────────────────────────────────────────────────────────
+function startExploration() {
+  const s = document.getElementById('start-screen');
+  s.style.opacity = '0';
+  s.style.pointerEvents = 'none';
+  setTimeout(() => s.style.display = 'none', 400);
+  canvas.requestPointerLock();
+}
+</script>
+</body>
+</html>
