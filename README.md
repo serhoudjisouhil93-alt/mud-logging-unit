@@ -71,7 +71,7 @@ Each instrument panel includes: **what it does**, **how it works**, **geological
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/mud-logging-unit.git
+git clone https://github.com/serhoudjisouhil93-alt/mud-logging-unit.git
 cd mud-logging-unit
 
 # Start a local server (required for Pointer Lock API)
