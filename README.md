@@ -91,7 +91,7 @@ Built by **Souhil Serhoudji** — Petroleum Geology student, Algeria.
 
 Part of a portfolio of data science and simulation tools for the oil and gas industry.
 
-- **LinkedIn:** [linkedin.com/in/your-profile](https://www.linkedin.com/in/serhoudji-souhil-abderrhaim-480979399/)
+- **LinkedIn:** [linkedin.com/in/your-profile](https://www.linkedin.com/in/serhoudji-souhil-abderrhaim-480979399)
 - **Fiverr:** [fiverr.com/serhoudji_twelve](https://fiverr.com/serhoudji_twelve)
 
 ---
